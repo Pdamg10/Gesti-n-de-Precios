@@ -1,0 +1,42 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Product {
+  id                    String   @id @default(cuid())
+  productType           String   @default("cauchos") // cauchos, baterias, o listas personalizadas
+  type                  String   // marca/tipo
+  medida                String   // medida/modelo
+  precioListaBs         Float    @default(0)
+  precioListaUsd        Float    @default(0)
+  adjustmentCashea      Float?   // ajuste individual para caucha
+  adjustmentTransferencia Float? // ajuste individual para transferencia
+  adjustmentDivisas     Float?   // ajuste individual para divisas
+  adjustmentCustom      Float?   // ajuste individual para precio personalizado
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
+
+model Setting {
+  id                    String   @id @default(cuid())
+  settingKey            String   @unique // tax_rate, custom_lists, global_adj_cauchos, etc.
+  settingValue          String?  // para JSON o valores de texto
+  taxRate               Float?   // para impuestos
+  globalCashea          Float?   // ajuste global caucha
+  globalTransferencia   Float?   // ajuste global transferencia
+  globalDivisas         Float?   // ajuste global divisas
+  globalCustom          Float?   // ajuste global precio personalizado
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+}
