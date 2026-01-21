@@ -745,7 +745,7 @@ export default function Home() {
 
       {/* Header */}
       <header className="text-center mb-6">
-        <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent">
+        <h1 className="text-3xl md:text-4xl font-bold bg-linear-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent">
           Gestión de Precios
         </h1>
         <p className="text-gray-400 mt-2">Sistema de control de precios con impuestos y ajustes</p>
