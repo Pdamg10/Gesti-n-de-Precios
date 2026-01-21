@@ -2,9 +2,8 @@ $ bun --hot index.ts
 46 |     }
 47 |   }
 48 |   let er;
-49 |   if (args.length > 0)
-50 |     er = args[0];
-51 |     throw er;
-                 ^
-error: Failed to start server. Is port 3001 in use?
-      at emitError (node:events:51:13)
+49 Client connected: c2F53VEF_mBbjUIjAAAB
+User identified: admin - c2F53VEF_mBbjUIjAAAB
+Client connected: Pb0WPpMT_f4vNEuDAAAE
+User identified: admin - Pb0WPpMT_f4vNEuDAAAE
+51:13)

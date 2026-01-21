@@ -45,7 +45,10 @@ interface CustomList {
 }
 
 export default function Home() {
-  // Usar el hook de datos en tiempo real
+  // Estados de autenticación primero
+  const [isAdmin, setIsAdmin] = useState(false)
+  
+  // Usar el hook de datos en tiempo real después de tener isAdmin
   const { data: realtimeData, connectedUsers, updateData } = useRealtimeData(isAdmin ? 'admin' : 'client')
   
   // Estados locales
@@ -59,7 +62,6 @@ export default function Home() {
     baterias: { cashea: 0, transferencia: 0, divisas: 0, custom: 0 }
   })
   const [searchTerm, setSearchTerm] = useState('')
-  const [isAdmin, setIsAdmin] = useState(false)
   const [showConfigPanel, setShowConfigPanel] = useState(false)
   const [showAddPanel, setShowAddPanel] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
