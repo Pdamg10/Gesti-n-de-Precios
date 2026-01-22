@@ -63,6 +63,8 @@ export default function Home() {
   // Usar el hook de datos en tiempo real después de tener isAdmin o isWorker
   const { data: realtimeData, connectedUsers, updateData, socket } = useRealtimeData((isAdmin || isWorker) ? (isAdmin ? 'admin' : 'worker') : 'client')
   
+  const isSuperAdmin = currentUser?.isSuperAdmin === true
+  
   // Estados locales
   const [products, setProducts] = useState<Product[]>([])
   const [settings, setSettings] = useState<Setting[]>([])
@@ -812,7 +814,7 @@ export default function Home() {
         )}
       </button>
 
-      {/* Config Panel */}
+      {/* Config Panel - Admin/Worker access the User list, Super Admin accesses settings */}
       {(isAdmin || isWorker) && (
         <div className="mb-4">
           <button
@@ -825,7 +827,7 @@ export default function Home() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
               <span className="text-amber-400">
-                {isAdmin ? 'Panel de Administración' : 'Panel de Usuarios Conectados'}
+                {isSuperAdmin ? 'Panel de Administración' : 'Panel de Usuarios Conectados'}
               </span>
             </div>
             <svg className={`w-6 h-6 text-gray-400 transform transition-transform ${showConfigPanel ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -837,7 +839,7 @@ export default function Home() {
             <div className="card-glass rounded-2xl p-4 md:p-6 mt-4">
               <AdminPanel socket={socket} currentUser={{ ...currentUser, userType: isAdmin ? 'admin' : 'worker' }} />
               
-              {isAdmin && (
+              {isSuperAdmin && (
                 <>
                   <h2 className="text-lg font-semibold text-amber-400 mb-4 mt-8 border-t border-white/10 pt-6">Configuración Global</h2>
               
@@ -1077,7 +1079,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* Add Product Panel */}
+      {/* Add Product Panel - Only Super Admin or Admin */}
       {isAdmin && (
         <div className="mb-4">
           <button

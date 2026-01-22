@@ -21,6 +21,7 @@ export default function AdminPanel({ socket, currentUser }: AdminPanelProps) {
   const { showAlert, showConfirm } = useModal()
 
   const isAdmin = currentUser?.userType === 'admin'
+  const isSuperAdmin = currentUser?.isSuperAdmin === true
 
   const formatName = (name?: string, lastName?: string) => {
     if (!name) return 'Anónimo'
@@ -80,8 +81,8 @@ export default function AdminPanel({ socket, currentUser }: AdminPanelProps) {
   }
 
   const handleKickWorker = async (targetSocketId: string, targetName: string) => {
-    if (!isAdmin) {
-      showAlert('No tienes permiso para hacer esto.', 'Error')
+    if (!isSuperAdmin) {
+      showAlert('Solo los super administradores pueden sacar trabajadores.', 'Error')
       return
     }
 
@@ -107,10 +108,10 @@ export default function AdminPanel({ socket, currentUser }: AdminPanelProps) {
     <div className="space-y-6">
 
 
-      {/* Password Management */}
+      {/* Password Management - Super Admin Only */}
       <div>
         <h3 className="text-lg font-semibold text-amber-400 mb-3">Gestión de Contraseña</h3>
-        {canChangePassword ? (
+        {isSuperAdmin ? (
           <div className="space-y-3">
             <button
               onClick={() => setShowPasswordModal(true)}
@@ -119,13 +120,13 @@ export default function AdminPanel({ socket, currentUser }: AdminPanelProps) {
               Cambiar Contraseña de Admin
             </button>
             <p className="text-xs text-gray-400">
-              Eres Administrador Principal y puedes cambiar la contraseña general.
+              Eres Super Administrador y puedes cambiar la contraseña general.
             </p>
           </div>
         ) : (
           <div className="text-center text-gray-500 py-4 bg-white/5 rounded-xl border border-white/5">
-            <p className="text-sm">No tienes permisos de Administrador Principal</p>
-            <p className="text-xs mt-1">Solo los primeros 2 administradores tienen estos permisos</p>
+            <p className="text-sm">No tienes permisos de Super Administrador</p>
+            <p className="text-xs mt-1">Solo los super administradores pueden realizar esta acción</p>
           </div>
         )}
       </div>
@@ -168,7 +169,7 @@ export default function AdminPanel({ socket, currentUser }: AdminPanelProps) {
                 </div>
               </div>
 
-              {isAdmin && user.socketId !== currentUser?.socketId && (
+              {isSuperAdmin && user.socketId !== currentUser?.socketId && (
                 <div className="flex gap-2">
                   {user.userType === 'worker' && (
                     <button
@@ -181,7 +182,7 @@ export default function AdminPanel({ socket, currentUser }: AdminPanelProps) {
                       </svg>
                     </button>
                   )}
-                  {user.userType === 'admin' && canChangePassword && (
+                  {user.userType === 'admin' && isSuperAdmin && (
                     <button
                       onClick={() => handleRemoveAdmin(user.id, formatName(user.name, user.lastName))}
                       className="p-2 rounded-lg bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 text-xs transition-all border border-orange-500/20"

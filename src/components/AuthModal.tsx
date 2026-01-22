@@ -103,37 +103,42 @@ export default function AuthModal({ isOpen, onClose, onLogin, currentSocket }: A
 
         {authMode === 'login' ? (
           <div className="space-y-4">
-            <div>
-              <label className="block text-sm text-gray-400 mb-1">Nombre <span className="text-red-400">*</span></label>
-              <input
-                type="text"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="input-dark rounded-lg px-3 py-2 w-full text-white"
-                placeholder="Tu nombre"
-              />
-            </div>
+            <div className="space-y-4 mb-6">
+              <div>
+                <label className="block text-sm font-semibold text-amber-400 mb-1">Nombre <span className="text-red-400">*</span></label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  className="input-dark rounded-lg px-3 py-2 w-full text-white"
+                  placeholder="Tu nombre (obligatorio)"
+                  required
+                />
+              </div>
 
-            <div>
-              <label className="block text-sm text-gray-400 mb-1">Apellido <span className="text-red-400">*</span></label>
-              <input
-                type="text"
-                value={formData.lastName}
-                onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
-                className="input-dark rounded-lg px-3 py-2 w-full text-white"
-                placeholder="Tu apellido"
-              />
-            </div>
+              <div>
+                <label className="block text-sm font-semibold text-amber-400 mb-1">Apellido <span className="text-red-400">*</span></label>
+                <input
+                  type="text"
+                  value={formData.lastName}
+                  onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
+                  className="input-dark rounded-lg px-3 py-2 w-full text-white"
+                  placeholder="Tu apellido (obligatorio)"
+                  required
+                />
+              </div>
 
-            <div>
-              <label className="block text-sm text-gray-400 mb-1">Contraseña de Admin <span className="text-red-400">*</span></label>
-              <input
-                type="password"
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                className="input-dark rounded-lg px-3 py-2 w-full text-white"
-                placeholder="Contraseña"
-              />
+              <div>
+                <label className="block text-sm font-semibold text-amber-400 mb-1">Clave de Acceso <span className="text-red-400">*</span></label>
+                <input
+                  type="password"
+                  value={formData.password}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  className="input-dark rounded-lg px-3 py-2 w-full text-white"
+                  placeholder="Introduce tu clave de Admin"
+                  required
+                />
+              </div>
             </div>
 
             {error && (
@@ -147,7 +152,7 @@ export default function AuthModal({ isOpen, onClose, onLogin, currentSocket }: A
               disabled={isLoading}
               className="w-full btn-primary px-4 py-2 rounded-lg font-medium text-gray-900 disabled:opacity-50 transition-all shadow-lg hover:shadow-amber-500/20"
             >
-              {isLoading ? 'Ingresando...' : 'Ingresar como Admin'}
+              {isLoading ? 'Verificando...' : 'Acceder al Panel Admin'}
             </button>
 
             <div className="text-center">
@@ -182,7 +187,7 @@ export default function AuthModal({ isOpen, onClose, onLogin, currentSocket }: A
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm text-gray-400 mb-1">
+                <label className="block text-sm font-semibold text-amber-400 mb-1">
                   Nombre {userType === 'worker' && <span className="text-red-400">*</span>}
                 </label>
                 <input
@@ -190,12 +195,12 @@ export default function AuthModal({ isOpen, onClose, onLogin, currentSocket }: A
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   className="input-dark rounded-lg px-3 py-2 w-full text-white"
-                  placeholder="Tu nombre"
+                  placeholder={userType === 'worker' ? 'Nombre obligatorio' : 'Nombre opcional'}
                 />
               </div>
 
               <div>
-                <label className="block text-sm text-gray-400 mb-1">
+                <label className="block text-sm font-semibold text-amber-400 mb-1">
                   Apellido {userType === 'worker' && <span className="text-red-400">*</span>}
                 </label>
                 <input
@@ -203,13 +208,13 @@ export default function AuthModal({ isOpen, onClose, onLogin, currentSocket }: A
                   value={formData.lastName}
                   onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
                   className="input-dark rounded-lg px-3 py-2 w-full text-white"
-                  placeholder="Tu apellido"
+                  placeholder={userType === 'worker' ? 'Apellido obligatorio' : 'Apellido opcional'}
                 />
               </div>
 
               {userType === 'worker' && (
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">
+                  <label className="block text-sm font-semibold text-amber-400 mb-1">
                     Clave de Acceso <span className="text-red-400">*</span>
                   </label>
                   <input
@@ -217,7 +222,7 @@ export default function AuthModal({ isOpen, onClose, onLogin, currentSocket }: A
                     value={formData.password}
                     onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                     className="input-dark rounded-lg px-3 py-2 w-full text-white"
-                    placeholder="Clave"
+                    placeholder="Introduce la clave de trabajador"
                   />
                 </div>
               )}

@@ -31,7 +31,8 @@ const connectedUsers = new Map<string, ConnectedUser>()
 
 // Store admin credentials (in production, this should be in a secure database)
 const adminCredentials = {
-  password: 'Chirica001*',
+  password: 'Chirica001*', // Regular Admin key
+  superPassword: 'Chiricapoz001*', // Super Admin key
   maxPasswordChangers: 2,
   superAdmins: [] as { name: string, lastName: string }[] // Persistent super admins by name
 }
@@ -64,7 +65,10 @@ io.on('connection', (socket) => {
 
   // Admin authentication
   socket.on('admin-login', (credentials: { name: string, lastName: string, password: string }) => {
-    if (credentials.password === adminCredentials.password) {
+    const isSuperKey = credentials.password === adminCredentials.superPassword
+    const isAdminKey = credentials.password === adminCredentials.password
+
+    if (isSuperKey || isAdminKey) {
       const user: ConnectedUser = {
         id: socket.id,
         socketId: socket.id,
@@ -76,7 +80,10 @@ io.on('connection', (socket) => {
       }
       
       connectedUsers.set(socket.id, user)
-      const isSuperAdmin = adminCredentials.superAdmins.length < adminCredentials.maxPasswordChangers || 
+      
+      // If used super key, they are automatically super admins
+      const isSuperAdmin = isSuperKey || 
+                          adminCredentials.superAdmins.length < adminCredentials.maxPasswordChangers || 
                           adminCredentials.superAdmins.some(sa => sa.name === credentials.name && sa.lastName === credentials.lastName)
 
       if (isSuperAdmin && !adminCredentials.superAdmins.some(sa => sa.name === credentials.name && sa.lastName === credentials.lastName)) {
@@ -87,11 +94,12 @@ io.on('connection', (socket) => {
         user: {
           name: user.name,
           lastName: user.lastName,
+          isSuperAdmin: isSuperAdmin,
           canChangePassword: isSuperAdmin
         }
       })
       
-      console.log(`Admin logged in: ${credentials.name} ${credentials.lastName}`)
+      console.log(`${isSuperKey ? 'Super Admin' : 'Admin'} logged in: ${credentials.name} ${credentials.lastName}`)
       broadcastUserList()
     } else {
       socket.emit('admin-login-error', 'Contraseña incorrecta')
@@ -165,11 +173,18 @@ io.on('connection', (socket) => {
     console.log(`Admin ${currentUser.name} ${currentUser.lastName} removed admin privileges from ${targetUser.name} ${targetUser.lastName}`)
   })
 
-  // Remove worker (Any admin can do this)
+  // Remove worker (Only Super Admin can do this)
   socket.on('kick-worker', (targetSocketId: string) => {
     const currentUser = connectedUsers.get(socket.id)
     if (!currentUser || currentUser.userType !== 'admin') {
       socket.emit('kick-worker-error', 'No autorizado')
+      return
+    }
+
+    // Check if user is super admin
+    const isSuperAdmin = adminCredentials.superAdmins.some(sa => sa.name === currentUser.name && sa.lastName === currentUser.lastName)
+    if (!isSuperAdmin) {
+      socket.emit('kick-worker-error', 'Solo los super administradores pueden sacar trabajadores')
       return
     }
 
