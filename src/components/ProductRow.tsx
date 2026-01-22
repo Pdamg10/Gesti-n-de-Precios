@@ -42,13 +42,14 @@ export default function ProductRow({
       </td>
       {['transferencia', 'cashea', 'divisas', 'custom'].map((type) => {
         const adjustment = getEffectiveAdjustment(product, type)
-        const basePrice = type === 'divisas' ? product.precioListaUsd : product.precioListaBs
+        const basePrice = (type === 'divisas' || type === 'custom') ? product.precioListaUsd : product.precioListaBs
         const finalPrice = calculatePrice(basePrice, adjustment)
         const isIndividual = (product as any)[`adjustment${type.charAt(0).toUpperCase() + type.slice(1)}`] !== undefined && (product as any)[`adjustment${type.charAt(0).toUpperCase() + type.slice(1)}`] !== null
+        const isUsd = type === 'divisas' || type === 'custom'
         
         return (
           <td key={type} className="py-3 px-2 text-right">
-            <div className="text-xs text-gray-500 mb-0.5">Base: ${basePrice.toFixed(2)}</div>
+            <div className="text-xs text-gray-500 mb-0.5">Base: {isUsd ? '$' : 'Bs. '}{basePrice.toFixed(2)}</div>
             <div className={`text-lg mb-0.5 font-bold ${adjustment < 0 ? 'text-red-400' : adjustment > 0 ? 'text-green-400' : 'text-gray-400'}`}>
               <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-bold ${
                 adjustment < 0 
@@ -61,11 +62,11 @@ export default function ProductRow({
               </span>
               {isIndividual && <span className="text-amber-400 ml-1" title="Ajuste individual">●</span>}
             </div>
-            <div className="font-mono text-xs font-medium text-white">Total: ${finalPrice.toFixed(2)}</div>
+            <div className="font-mono text-xs font-medium text-white">Total: {isUsd ? '$' : 'Bs. '}{finalPrice.toFixed(2)}</div>
           </td>
         )
       })}
-      <td className="py-3 px-2 text-right font-mono text-sm">${product.precioListaBs.toFixed(2)}</td>
+      <td className="py-3 px-2 text-right font-mono text-sm">Bs. {product.precioListaBs.toFixed(2)}</td>
       <td className="py-3 px-2 text-right font-mono text-sm">${product.precioListaUsd.toFixed(2)}</td>
       <td className="py-3 pl-2 text-center">
         <div className="flex justify-center gap-1">

@@ -46,7 +46,7 @@ interface RealtimeData {
   settings: Setting[]
 }
 
-export function useRealtimeData(userType: 'admin' | 'client' | 'worker' = 'client') {
+export function useRealtimeData(userType: 'admin' | 'client' | 'worker' = 'client', userInfo?: { name?: string, lastName?: string }) {
   const [socket, setSocket] = useState<Socket | null>(null)
   const [data, setData] = useState<RealtimeData>({ products: [], settings: [] })
   const [connectedUsers, setConnectedUsers] = useState<ConnectedUser[]>([])
@@ -105,7 +105,11 @@ export function useRealtimeData(userType: 'admin' | 'client' | 'worker' = 'clien
       clearInterval(fallbackInterval)
       
       // Identify user
-      newSocket.emit('identify-user', { userType })
+      newSocket.emit('identify-user', { 
+        userType,
+        name: userInfo?.name,
+        lastName: userInfo?.lastName
+      })
       
       // Request current data when connected
       newSocket.emit('request-current-data')
@@ -169,7 +173,7 @@ export function useRealtimeData(userType: 'admin' | 'client' | 'worker' = 'clien
       clearInterval(activityInterval)
       newSocket.close()
     }
-  }, [userType])
+  }, [userType, userInfo?.name, userInfo?.lastName])
 
   const updateData = useCallback((type: 'products' | 'settings', newData: any) => {
     setData(prevData => ({

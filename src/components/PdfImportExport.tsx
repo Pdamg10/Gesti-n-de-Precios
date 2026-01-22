@@ -164,12 +164,43 @@ export default function PdfImportExport({ products, activeTab, onImport }: PdfIm
           
           // 2. Buscar precio después de la medida
           const afterSize = line.split(sizeMatch[0])[1] || ''
-          // Regex más flexible: busca número con decimales opcionales, puede tener $ o Bs cerca
-          const priceMatch = afterSize.match(/(?:Bs|USD|\$)?\s*(\d+(?:[.,]\d{1,2})?)\s*(?:Bs|USD|\$)?/i)
+          
+          // Regex mejorado para precios: soporta 1.234,56 o 1,234.56
+          // Busca números que pueden tener separadores, seguidos opcionalmente por moneda
+          // Asegura que termine en dígito para evitar capturar puntos finales de oración
+          const priceMatch = afterSize.match(/(?:Bs\.?|USD|\$)?\s*([\d.,]*\d)\s*(?:Bs\.?|USD|\$)?/i)
           
           if (priceMatch) {
-            const precio = parseFloat(priceMatch[1].replace(',', '.'))
-            if (precio <= 0) return
+            // Limpiar el precio: eliminar todo excepto dígitos y el último separador decimal
+            let priceStr = priceMatch[1]
+            
+            // Si tiene coma y punto, asumir que el último es el decimal
+            if (priceStr.includes(',') && priceStr.includes('.')) {
+               // Normalizar a formato 1234.56
+               priceStr = priceStr.replace(/[,.](?=\d{3}(?=[,.]))/g, '') // Quitar separadores de miles
+                                  .replace(',', '.') // Cambiar coma decimal a punto
+            } else if (priceStr.includes(',')) {
+               // Si solo tiene comas:
+               // Si hay más de una coma o la coma está seguida de 3 dígitos -> miles
+               // Si está al final -> decimal
+               // Asumiremos formato europeo 1.234,56 si hay puntos, pero aquí solo hay comas
+               // Caso común en Venezuela: 1,234.56 o 1.234,56
+               
+               // Estrategia simple: reemplazar coma por punto
+               priceStr = priceStr.replace(',', '.')
+            }
+            // Eliminar cualquier otro caracter no numérico excepto el punto
+            priceStr = priceStr.replace(/[^\d.]/g, '')
+            
+            // Validar que no haya múltiples puntos
+            const parts = priceStr.split('.')
+            if (parts.length > 2) {
+               // Mantener solo el último punto
+               priceStr = parts.slice(0, -1).join('') + '.' + parts[parts.length - 1]
+            }
+
+            const precio = parseFloat(priceStr)
+            if (isNaN(precio) || precio <= 0) return
 
             // 3. Obtener la marca (texto antes de la medida)
             let type = line.split(sizeMatch[0])[0].trim()

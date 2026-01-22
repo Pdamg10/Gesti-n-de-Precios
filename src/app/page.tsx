@@ -62,7 +62,10 @@ export default function Home() {
   const { showAlert, showConfirm, showPrompt } = useModal()
   
   // Usar el hook de datos en tiempo real después de tener isAdmin o isWorker
-  const { data: realtimeData, connectedUsers, updateData, socket } = useRealtimeData((isAdmin || isWorker) ? (isAdmin ? 'admin' : 'worker') : 'client')
+  const { data: realtimeData, connectedUsers, updateData, socket } = useRealtimeData(
+    (isAdmin || isWorker) ? (isAdmin ? 'admin' : 'worker') : 'client',
+    currentUser
+  )
   
   const isSuperAdmin = currentUser?.isSuperAdmin === true
   
@@ -82,6 +85,7 @@ export default function Home() {
   const [showEditModal, setShowEditModal] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [showPreviewModal, setShowPreviewModal] = useState(false)
+  const [showAddListModal, setShowAddListModal] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const [extractedProducts, setExtractedProducts] = useState<ExtractedProduct[]>([])
   const [editForm, setEditForm] = useState({
@@ -344,6 +348,42 @@ export default function Home() {
     }
   }
 
+  const saveNewList = async () => {
+    if (!newListForm.name || !newListForm.emoji) {
+      showAlert('Por favor completa todos los campos', 'Información')
+      return
+    }
+
+    const newList = {
+      id: newListForm.name.toLowerCase().replace(/\s+/g, '-'),
+      name: newListForm.name,
+      emoji: newListForm.emoji
+    }
+
+    const updatedLists = [...customLists, newList]
+    
+    try {
+      const response = await fetch('/api/settings/custom_lists', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          settingValue: JSON.stringify(updatedLists)
+        })
+      })
+
+      if (response.ok) {
+        setCustomLists(updatedLists)
+        setNewListForm({ name: '', emoji: '' })
+        setShowAddListModal(false)
+        showAlert('Lista creada correctamente', 'Éxito')
+        refreshData()
+      }
+    } catch (error) {
+      console.error('Error saving list:', error)
+      showAlert('Error al crear la lista', 'Error')
+    }
+  }
+
   const exportToExcel = async () => {
     try {
       const response = await fetch('/api/export-data', {
@@ -487,7 +527,7 @@ export default function Home() {
     
     const types = ['cashea', 'transferencia', 'divisas', 'custom']
     types.forEach(type => {
-      const basePrice = type === 'divisas' ? product.precioListaUsd : product.precioListaBs
+      const basePrice = (type === 'divisas' || type === 'custom') ? product.precioListaUsd : product.precioListaBs
       const adjustment = getEffectiveAdjustment(product, type)
       const finalPrice = calculatePrice(basePrice, adjustment)
       
@@ -802,7 +842,7 @@ export default function Home() {
           </button>
           {isSuperAdmin && (
             <button
-              onClick={() => showAlert('Función de agregar lista en desarrollo', 'Próximamente')}
+              onClick={() => setShowAddListModal(true)}
               className="px-6 py-2 rounded-lg font-medium transition-all bg-green-600/20 text-green-400 hover:bg-green-600/40 border-2 border-green-600/50 border-dashed"
             >
               ➕ Agregar Lista
@@ -1015,7 +1055,7 @@ export default function Home() {
                     { key: 'cashea', label: 'Cashea (Bs)' },
                     { key: 'transferencia', label: 'Transferencia (Bs)' },
                     { key: 'divisas', label: 'Divisas ($)' },
-                    { key: 'custom', label: 'Otro Precio' }
+                    { key: 'custom', label: 'Divisas en Fisico' }
                   ].map(({ key, label }) => (
                     <div key={key} className="card-glass rounded-lg p-3">
                       <label className="block text-xs text-gray-400 mb-1">{label}</label>
@@ -1265,11 +1305,11 @@ export default function Home() {
               <tr className="border-b border-white/10 text-left">
                 <th className="pb-3 text-sm font-medium text-gray-400">Producto</th>
                 <th className="pb-3 text-sm font-medium text-amber-400 text-right">Transferencia (Bs)</th>
-                <th className="pb-3 text-sm font-medium text-amber-400 text-right">Cashea (Bs)</th>
-                <th className="pb-3 text-sm font-medium text-amber-400 text-right">Divisas ($)</th>
-                <th className="pb-3 text-sm font-medium text-amber-400 text-right">Otro Precio</th>
-                <th className="pb-3 text-sm font-medium text-gray-400 text-right">Lista (Bs)</th>
-                <th className="pb-3 text-sm font-medium text-gray-400 text-right">Lista ($)</th>
+                  <th className="pb-3 text-sm font-medium text-amber-400 text-right">Cashea (Bs)</th>
+                  <th className="pb-3 text-sm font-medium text-amber-400 text-right">Divisas ($)</th>
+                  <th className="pb-3 text-sm font-medium text-amber-400 text-right">Divisas en Fisico</th>
+                  <th className="pb-3 text-sm font-medium text-gray-400 text-right">Lista (Bs)</th>
+                  <th className="pb-3 text-sm font-medium text-gray-400 text-right">Lista ($)</th>
                 <th className="pb-3 text-sm font-medium text-gray-400 text-center">Acciones</th>
               </tr>
             </thead>
@@ -1366,7 +1406,7 @@ export default function Home() {
                     { key: 'adjustmentCashea', label: 'Cashea (Bs) %' },
                     { key: 'adjustmentTransferencia', label: 'Transferencia (Bs) %' },
                     { key: 'adjustmentDivisas', label: 'Divisas ($) %' },
-                    { key: 'adjustmentCustom', label: 'Otro Precio %' }
+                    { key: 'adjustmentCustom', label: 'Divisas en Fisico %' }
                   ].map(({ key, label }) => (
                     <div key={key} className="card-glass rounded-lg p-3">
                       <label className="block text-xs text-gray-400 mb-1">{label}</label>
@@ -1484,6 +1524,51 @@ export default function Home() {
               >
                 Confirmar Importación
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add List Modal */}
+      {showAddListModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="card-glass rounded-2xl p-6 w-full max-w-md">
+            <h2 className="text-xl font-bold mb-4 text-white">Nueva Lista</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">Nombre de la lista</label>
+                <input
+                  type="text"
+                  value={newListForm.name}
+                  onChange={(e) => setNewListForm({ ...newListForm, name: e.target.value })}
+                  placeholder="Ej: Aceites"
+                  className="input-dark w-full rounded-lg px-4 py-2 text-white"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">Emoji representativo</label>
+                <input
+                  type="text"
+                  value={newListForm.emoji}
+                  onChange={(e) => setNewListForm({ ...newListForm, emoji: e.target.value })}
+                  placeholder="Ej: 🛢️"
+                  className="input-dark w-full rounded-lg px-4 py-2 text-white"
+                />
+              </div>
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={() => setShowAddListModal(false)}
+                  className="flex-1 px-4 py-2 rounded-lg font-medium bg-gray-700 hover:bg-gray-600 transition-all"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={saveNewList}
+                  className="flex-1 btn-primary px-4 py-2 rounded-lg font-medium text-gray-900 transition-all"
+                >
+                  Crear Lista
+                </button>
+              </div>
             </div>
           </div>
         </div>

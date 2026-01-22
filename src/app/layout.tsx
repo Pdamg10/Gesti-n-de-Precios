@@ -19,7 +19,7 @@ export const metadata: Metadata = {
   keywords: ["Precios", "Gestión", "Inventario", "Next.js", "React"],
   authors: [{ name: "Admin" }],
   icons: {
-    icon: "/favicon.ico", // Assuming a favicon exists or will use default
+    icon: "/icon",
   },
   openGraph: {
     title: "Gestiór de Precios",

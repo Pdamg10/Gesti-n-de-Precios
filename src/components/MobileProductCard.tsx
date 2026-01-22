@@ -72,15 +72,16 @@ export default function MobileProductCard({
       <div className="grid grid-cols-1 gap-4">
         {['transferencia', 'cashea', 'divisas', 'custom'].map((type) => {
           const adjustment = getEffectiveAdjustment(product, type)
-          const basePrice = type === 'divisas' ? product.precioListaUsd : product.precioListaBs
+          const basePrice = (type === 'divisas' || type === 'custom') ? product.precioListaUsd : product.precioListaBs
           const finalPrice = calculatePrice(basePrice, adjustment)
           const isIndividual = (product as any)[`adjustment${type.charAt(0).toUpperCase() + type.slice(1)}`] !== undefined && (product as any)[`adjustment${type.charAt(0).toUpperCase() + type.slice(1)}`] !== null
+          const isUsd = type === 'divisas' || type === 'custom'
           
           let label = ''
           if (type === 'transferencia') label = 'Transferencia (Bs)'
           else if (type === 'cashea') label = 'Cashea (Bs)'
           else if (type === 'divisas') label = 'Divisas ($)'
-          else label = 'Otro Precio'
+          else label = 'Divisas en Fisico'
 
           return (
             <div key={type} className="bg-black/20 rounded-lg p-3 border border-white/5">
@@ -102,10 +103,10 @@ export default function MobileProductCard({
               
               <div className="flex justify-between items-end">
                 <div className="text-xs text-gray-600">
-                  Base: ${basePrice.toFixed(2)}
+                  Base: {isUsd ? '$' : 'Bs. '}{basePrice.toFixed(2)}
                 </div>
                 <div className="text-2xl font-bold font-mono text-white">
-                  ${finalPrice.toFixed(2)}
+                  {isUsd ? '$' : 'Bs. '}{finalPrice.toFixed(2)}
                   <span className="text-xs text-gray-500 ml-1 font-sans font-normal">(Inc. IVA)</span>
                 </div>
               </div>
@@ -116,7 +117,7 @@ export default function MobileProductCard({
 
       {/* Footer Info */}
       <div className="mt-4 pt-3 border-t border-white/10 flex justify-between text-xs text-gray-500">
-        <div>Lista (Bs): <span className="text-gray-300 font-mono">${product.precioListaBs.toFixed(2)}</span></div>
+        <div>Lista (Bs): <span className="text-gray-300 font-mono">Bs. {product.precioListaBs.toFixed(2)}</span></div>
         <div>Lista ($): <span className="text-gray-300 font-mono">${product.precioListaUsd.toFixed(2)}</span></div>
       </div>
     </div>
