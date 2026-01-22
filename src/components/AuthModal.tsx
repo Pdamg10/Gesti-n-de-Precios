@@ -32,23 +32,27 @@ export default function AuthModal({ isOpen, onClose, onLogin, currentSocket }: A
     setIsLoading(true)
     setError('')
 
-    try {
-      currentSocket.emit('admin-login', {
-        name: formData.name,
-        lastName: formData.lastName,
-        password: formData.password
-      })
+    const trimmedData = {
+      name: formData.name.trim(),
+      lastName: formData.lastName.trim(),
+      password: formData.password.trim()
+    }
 
-      // Listen for response
-      currentSocket.on('admin-login-success', (data) => {
-        onLogin('admin', { ...formData, ...data.user })
+    try {
+      currentSocket.emit('admin-login', trimmedData)
+
+      // Listen for response (using once to avoid duplicate listeners)
+      currentSocket.once('admin-login-success', (data: any) => {
+        onLogin('admin', { ...trimmedData, ...data.user })
         onClose()
         setIsLoading(false)
+        currentSocket.off('admin-login-error')
       })
 
-      currentSocket.on('admin-login-error', (errorMsg) => {
+      currentSocket.once('admin-login-error', (errorMsg: string) => {
         setError(errorMsg)
         setIsLoading(false)
+        currentSocket.off('admin-login-success')
       })
     } catch (error) {
       setError('Error de conexión')
@@ -62,18 +66,22 @@ export default function AuthModal({ isOpen, onClose, onLogin, currentSocket }: A
       return
     }
 
-    if (formData.password !== 'Chirica001*') {
+    const password = formData.password.trim()
+    if (password !== 'Chirica001*' && password !== 'Chiricapoz001*') {
       setError('Clave de trabajador incorrecta')
       return
     }
 
+    const name = formData.name.trim()
+    const lastName = formData.lastName.trim()
+
     currentSocket.emit('identify-user', {
       userType: 'worker',
-      name: formData.name,
-      lastName: formData.lastName
+      name: name,
+      lastName: lastName
     })
 
-    onLogin('worker', { name: formData.name, lastName: formData.lastName })
+    onLogin('worker', { name, lastName })
     onClose()
   }
 

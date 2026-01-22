@@ -107,6 +107,7 @@ export default function Home() {
   })
 
   const ADMIN_PASSWORD = 'Chirica001*'
+  const SUPER_ADMIN_PASSWORD = 'Chiricapoz001*'
 
   // Actualizar estados cuando cambian los datos en tiempo real
   useEffect(() => {
@@ -794,8 +795,11 @@ export default function Home() {
           } else {
             const password = await showPrompt('Contraseña de administrador:', 'Acceso Administrador', '', true)
             if (password === ADMIN_PASSWORD) {
-              handleLogin('admin')
+              handleLogin('admin', { isSuperAdmin: false })
               showAlert('Acceso concedido - Modo Administrador activado', 'Éxito')
+            } else if (password === SUPER_ADMIN_PASSWORD) {
+              handleLogin('admin', { isSuperAdmin: true })
+              showAlert('Acceso concedido - Modo Super Administrador activado', 'Éxito')
             } else if (password !== null) {
               showAlert('Contraseña incorrecta', 'Error')
             }
