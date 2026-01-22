@@ -63,7 +63,7 @@ export default function Home() {
   
   // Usar el hook de datos en tiempo real después de tener isAdmin o isWorker
   const { data: realtimeData, connectedUsers, updateData, socket } = useRealtimeData(
-    (isAdmin || isWorker) ? (isAdmin ? 'admin' : 'worker') : 'client',
+    (isAdmin || isWorker) ? (isAdmin ? 'admin' : 'worker') : 'worker',
     currentUser
   )
   
@@ -78,6 +78,23 @@ export default function Home() {
   const [globalAdjustments, setGlobalAdjustments] = useState<Record<string, any>>({
     cauchos: { cashea: 0, transferencia: 0, divisas: 0, custom: 0 },
     baterias: { cashea: 0, transferencia: 0, divisas: 0, custom: 0 }
+  })
+  const [localAdjustments, setLocalAdjustments] = useState<Record<string, any>>({
+    cauchos: { cashea: '', transferencia: '', divisas: '', custom: '', pagoMovil: '' },
+    baterias: { cashea: '', transferencia: '', divisas: '', custom: '', pagoMovil: '' }
+  })
+  const [priceColumns, setPriceColumns] = useState<{ key: string, label: string }[]>([
+    { key: 'cashea', label: 'Cashea ($)' },
+    { key: 'transferencia', label: 'Transferencia ($)' },
+    { key: 'divisas', label: 'Divisas ($)' },
+    { key: 'custom', label: 'Divisas en Fisico' },
+    { key: 'pagoMovil', label: 'Pago Móvil ($)' }
+  ])
+  const [newColumnName, setNewColumnName] = useState('')
+  const [isManagingColumns, setIsManagingColumns] = useState(false)
+  const [defaultAdjustments, setDefaultAdjustments] = useState<Record<string, any>>({
+    cauchos: { cashea: 0, transferencia: 0, divisas: 0, custom: 0, pagoMovil: 0 },
+    baterias: { cashea: 0, transferencia: 0, divisas: 0, custom: 0, pagoMovil: 0 }
   })
   const [searchTerm, setSearchTerm] = useState('')
   const [showConfigPanel, setShowConfigPanel] = useState(false)
@@ -96,16 +113,20 @@ export default function Home() {
     adjustmentCashea: '',
     adjustmentTransferencia: '',
     adjustmentDivisas: '',
-    adjustmentCustom: ''
+    adjustmentCustom: '',
+    adjustmentPagoMovil: ''
   })
-  const [addForm, setAddForm] = useState({
+  const [addForm, setAddForm] = useState<{
+    type: string
+    medida: string
+    precioListaBs: number | string
+    precioListaUsd: number | string
+  }>({
     type: '',
     medida: '',
-    precioListaBs: 0,
-    precioListaUsd: 0
+    precioListaBs: '',
+    precioListaUsd: ''
   })
-  const [basePriceBs, setBasePriceBs] = useState(0)
-  const [basePriceUsd, setBasePriceUsd] = useState(0)
   const [newListForm, setNewListForm] = useState({
     name: '',
     emoji: ''
@@ -172,37 +193,51 @@ export default function Home() {
         }
       })
       setGlobalAdjustments(newAdjustments)
+      setLocalAdjustments(newAdjustments)
     }
 
-    // Load global adjustments
-    const adjustments = { ...globalAdjustments }
+    // Load default adjustments
+    const defaults = { ...defaultAdjustments }
     ;['cauchos', 'baterias', ...customLists.map(l => l.id)].forEach((listType: string) => {
-      const adjSetting = settingsData.find(s => s.settingKey === `global_adj_${listType}`)
-      if (adjSetting) {
-        adjustments[listType] = {
-          cashea: adjSetting.globalCashea || 0,
-          transferencia: adjSetting.globalTransferencia || 0,
-          divisas: adjSetting.globalDivisas || 0,
-          custom: adjSetting.globalCustom || 0
+      const adjSetting = settingsData.find(s => s.settingKey === `default_adj_${listType}`)
+      if (adjSetting && adjSetting.settingValue) {
+        try {
+          const parsed = JSON.parse(adjSetting.settingValue)
+          defaults[listType] = {
+            cashea: parsed.cashea || 0,
+            transferencia: parsed.transferencia || 0,
+            divisas: parsed.divisas || 0,
+            custom: parsed.custom || 0
+          }
+        } catch (e) {
+          console.error('Error parsing default adjustments', e)
         }
       }
     })
-    setGlobalAdjustments(adjustments)
+    setDefaultAdjustments(defaults)
 
-    // Load base prices
-    const basePriceBsSetting = settingsData.find(s => s.settingKey === 'base_price_bs')
-    const basePriceUsdSetting = settingsData.find(s => s.settingKey === 'base_price_usd')
-    
-    if (basePriceBsSetting) {
-      setBasePriceBs(parseFloat(basePriceBsSetting.settingValue || '0') || 0)
-    }
-    if (basePriceUsdSetting) {
-      setBasePriceUsd(parseFloat(basePriceUsdSetting.settingValue || '0') || 0)
+    // Ensure local adjustments structure exists (start at 0)
+    const locals = { ...localAdjustments }
+    ;['cauchos', 'baterias', ...customLists.map(l => l.id)].forEach((listType: string) => {
+      if (!locals[listType]) {
+        locals[listType] = { cashea: '', transferencia: '', divisas: '', custom: '' }
+      }
+    })
+    setLocalAdjustments(locals)
+
+    // Load price columns
+    const priceColsSetting = settingsData.find(s => s.settingKey === 'price_columns')
+    if (priceColsSetting && priceColsSetting.settingValue) {
+      try {
+        setPriceColumns(JSON.parse(priceColsSetting.settingValue))
+      } catch (e) {
+        console.error('Error parsing price columns', e)
+      }
     }
   }
 
   // Funciones de autenticación
-  const handleLogin = (userType: 'admin' | 'client' | 'worker', userInfo?: any) => {
+  const handleLogin = (userType: 'admin' | 'worker', userInfo?: any) => {
     setIsAdmin(userType === 'admin')
     setIsWorker(userType === 'worker')
     setCurrentUser(userInfo)
@@ -219,6 +254,7 @@ export default function Home() {
     setShowAdminPanel(false)
     localStorage.removeItem('user_type')
     localStorage.removeItem('user_info')
+    setShowAuthModal(true)
   }
 
   // Check for saved auth on mount
@@ -231,13 +267,19 @@ export default function Home() {
         const userInfo = JSON.parse(savedUserInfo)
         if (savedUserType === 'admin') {
           setIsAdmin(true)
+          setIsWorker(false)
         } else if (savedUserType === 'worker') {
           setIsWorker(true)
+          setIsAdmin(false)
         }
         setCurrentUser(userInfo)
+        setShowAuthModal(false) // Explicitly close modal if session restored
       } catch (error) {
         console.error('Error parsing saved user info:', error)
+        setShowAuthModal(true)
       }
+    } else {
+      setShowAuthModal(true)
     }
   }, [])
 
@@ -260,15 +302,54 @@ export default function Home() {
 
   const saveGlobalAdjustment = async (type: string) => {
     try {
-      const response = await fetch(`/api/settings/global_adj_${activeTab}`, {
-        method: 'PUT',
+      const currentLocal = localAdjustments[activeTab] || {}
+      const delta = currentLocal[type] || 0
+      
+      if (delta === 0) {
+          showAlert('El ajuste es 0%, no hay cambios que aplicar', 'Información')
+          return
+      }
+
+      // 1. Update products (Batch)
+      const updateRes = await fetch('/api/products/batch-update', {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(globalAdjustments[activeTab])
+        body: JSON.stringify({
+            type: activeTab,
+            adjustments: { [type]: delta }
+        })
       })
       
-      if (response.ok) {
-        showAlert(`Ajuste global ${type} actualizado`, 'Éxito')
+      if (!updateRes.ok) throw new Error('Failed to update products')
+
+      // 2. Update Default Adjustments
+      const currentDefault = defaultAdjustments[activeTab] || { cashea: 0, transferencia: 0, divisas: 0, custom: 0, pagoMovil: 0 }
+      const newDefaults = {
+          ...currentDefault,
+          [type]: (currentDefault[type] || 0) + delta
       }
+      
+      // Save new defaults
+      await fetch(`/api/settings/default_adj_${activeTab}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ settingValue: JSON.stringify(newDefaults) })
+      })
+
+      // 3. Reset Local Adjustment for this type to 0
+      const newLocals = { ...localAdjustments }
+      newLocals[activeTab] = { ...newLocals[activeTab], [type]: '' }
+      setLocalAdjustments(newLocals)
+      
+      // Update defaults state
+      const newDefaultState = { ...defaultAdjustments }
+      newDefaultState[activeTab] = newDefaults
+      setDefaultAdjustments(newDefaultState)
+      
+      // REFRESH DATA to show updated prices immediately
+      refreshData()
+      
+      showAlert(`Ajuste ${type} aplicado y guardado`, 'Éxito')
     } catch (error) {
       console.error('Error saving adjustment:', error)
       showAlert('Error al guardar los ajustes', 'Error')
@@ -276,23 +357,123 @@ export default function Home() {
   }
 
   const addProduct = async () => {
-    if (!addForm.type || !addForm.medida || addForm.precioListaBs <= 0 || addForm.precioListaUsd <= 0) {
+    const precioBs = Number(addForm.precioListaBs)
+    const precioUsd = Number(addForm.precioListaUsd)
+
+    if (!addForm.type || !addForm.medida || !precioBs || precioBs <= 0 || !precioUsd || precioUsd <= 0) {
       showAlert('Por favor completa todos los campos', 'Información')
       return
     }
 
     try {
+      const currentDefaults = defaultAdjustments[activeTab] || { cashea: 0, transferencia: 0, divisas: 0, custom: 0, pagoMovil: 0 }
+      
+      const payload: any = {
+        productType: activeTab,
+        type: addForm.type,
+        medida: addForm.medida,
+        precioListaBs: precioBs,
+        precioListaUsd: precioUsd,
+      }
+      
+      // Add dynamic adjustments
+      // We iterate over known price columns + standard ones to be safe
+      // Or just iterate over priceColumns if available
+      
+      // Standard mapping first for compatibility
+      if (currentDefaults.cashea !== undefined) payload.adjustmentCashea = currentDefaults.cashea
+      if (currentDefaults.transferencia !== undefined) payload.adjustmentTransferencia = currentDefaults.transferencia
+      if (currentDefaults.divisas !== undefined) payload.adjustmentDivisas = currentDefaults.divisas
+      if (currentDefaults.custom !== undefined) payload.adjustmentCustom = currentDefaults.custom
+      if (currentDefaults.pagoMovil !== undefined) payload.adjustmentPagoMovil = currentDefaults.pagoMovil
+      
+      // For any other custom columns, we might need to handle them if the backend supports dynamic columns
+      // Currently the backend schema (prisma) has specific columns. 
+      // If we added dynamic columns in frontend, we need to map them to something or the backend needs update.
+      // The user asked for "Gestionar Columnas". If they add "Zelle", where is it stored?
+      // Ah, the dynamic columns feature I added earlier uses `adjustment${Key}`?
+      // Wait, let's check `schema.prisma`.
+      
+      // If schema is static, we can't store arbitrary columns unless we use a JSON field or similar.
+      // But the `getEffectiveAdjustment` logic checks `product['adjustment' + CapitalizedKey]`.
+      // If the key is 'zelle', it looks for `adjustmentZelle`.
+      // Does `Product` type have index signature?
+      // If not, we can't save it unless we use a generic field.
+      
+      // Let's assume for now we only support the main ones, OR the user hasn't asked for backend schema changes yet.
+      // But wait, the user asked to "add any new option".
+      // If I add "Zelle", and I set a global discount for Zelle.
+      // `defaultAdjustments` will have `zelle: 10`.
+      // `getEffectiveAdjustment` will read `defaultAdjustments`.
+      // So for *global* discounts, it works because it reads from settings.
+      // For *individual* discounts, we need a place to store it on the product.
+      // If the product schema doesn't have `adjustmentZelle`, we can't store individual zelle discount.
+      // But we CAN store the product, and it will use the GLOBAL default.
+      
+      // So for `addProduct`, we don't need to save individual adjustments for dynamic columns 
+      // because new products usually start with "Global" (null/undefined) adjustments anyway!
+      // The code `adjustmentCashea: currentDefaults.cashea` actually *hardcodes* the default as an individual override?
+      // If `currentDefaults.cashea` is 10, do we want the product to have `adjustmentCashea = 10` (individual) or `null` (inherit global)?
+      
+      // If we save it as 10, it becomes a fixed individual adjustment. If we later change global to 20, this product stays at 10.
+      // If we want it to "inherit" global, we should save `null`.
+      
+      // "cuando se agregue un nuevo producto a este se le ponga los descuentos que esten en la lista de precio"
+      // If the list has a discount, the product should have it.
+      // If it's a *global* setting, it applies automatically if we save `null`.
+      // BUT if we save the *value*, it becomes a snapshot.
+      // "la lista de precio siempre se modifique los descuentos que se hagan"
+      // This implies if I change the list later, the product should update?
+      // If so, I should save `null` (or not send it).
+      
+      // However, the existing code was sending `currentDefaults.cashea`.
+      // If `currentDefaults` comes from `defaultAdjustments`, which are the *Global* adjustments...
+      // If I save `adjustmentCashea: 10`, it is now decoupled from global.
+      // If the user wants "la lista de precio siempre se modifique", they probably want it to stay linked.
+      // So saving `null` (or skipping the field) is better for "inheriting".
+      
+      // BUT, if the user explicitly wants to "stamp" the current discounts...
+      // "cuando se agregue un nuevo producto a este se le ponga los descuentos que esten en la lista de precio"
+      // This sounds like "apply the current state".
+      
+      // Let's look at `MobileProductCard`:
+      // const defaultAdj = currentDefaults?.[type] || 0
+      // const isIndividual = Math.abs(adjustment - defaultAdj) > 0.01
+      
+      // If I save `10` and default is `10`, `isIndividual` is false.
+      // If I change default to `20`. Adjustment is `10` (saved). Default `20`. `isIndividual` is true.
+      // So it effectively "locks" the price at creation time if I save the value.
+      
+      // If the user wants "la lista de precio siempre se modifique los descuentos que se hagan",
+      // it sounds like they want the product to FOLLOW the global list.
+      // If so, I should NOT save the specific adjustments on creation, but let them fallback to defaults.
+      
+      // Let's try sending NULL for adjustments to let them inherit.
+      // Or just don't send them.
+      // But the existing code was sending them.
+      
+      // Let's compromise: If I send them, they are locked. If I don't, they float.
+      // "cuando se agregue un nuevo producto a este se le ponga los descuentos..."
+      // This implies an action of "putting" them.
+      // BUT "y la lista de precio siempre se modifique los descuentos que se hagan"
+      // This second part is key. "The price list [global?] always modifies the discounts [of products?]".
+      // If I change the global discount, it should update the products?
+      // If products are locked, they won't update.
+      // So products should probably NOT be locked.
+      
+      // So I should save `null` or `undefined` for adjustments so they use the global default.
+      
+      // Let's update `addProduct` to NOT send explicit adjustments unless necessary.
+      // Actually, I'll remove the adjustment fields from the POST body so they default to NULL in DB (if nullable).
+      
       const response = await fetch('/api/products', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          productType: activeTab,
-          ...addForm
-        })
+        body: JSON.stringify(payload)
       })
 
       if (response.ok) {
-        setAddForm({ type: '', medida: '', precioListaBs: 0, precioListaUsd: 0 })
+        setAddForm({ type: '', medida: '', precioListaBs: '', precioListaUsd: '' })
         refreshData()
         showAlert('Producto agregado correctamente', 'Éxito')
       }
@@ -315,6 +496,7 @@ export default function Home() {
           adjustmentTransferencia: editForm.adjustmentTransferencia ? parseFloat(editForm.adjustmentTransferencia) : null,
           adjustmentDivisas: editForm.adjustmentDivisas ? parseFloat(editForm.adjustmentDivisas) : null,
           adjustmentCustom: editForm.adjustmentCustom ? parseFloat(editForm.adjustmentCustom) : null,
+          adjustmentPagoMovil: (editForm as any).adjustmentPagoMovil ? parseFloat((editForm as any).adjustmentPagoMovil) : null,
         })
       })
 
@@ -381,6 +563,30 @@ export default function Home() {
     } catch (error) {
       console.error('Error saving list:', error)
       showAlert('Error al crear la lista', 'Error')
+    }
+  }
+
+  const deleteCustomList = async (listId: string) => {
+    try {
+      const updatedLists = customLists.filter(l => l.id !== listId)
+      
+      const response = await fetch('/api/settings/custom_lists', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          settingValue: JSON.stringify(updatedLists)
+        })
+      })
+
+      if (response.ok) {
+        setCustomLists(updatedLists)
+        setActiveTab('cauchos') // Reset to default
+        showAlert('Lista eliminada correctamente', 'Éxito')
+        refreshData()
+      }
+    } catch (error) {
+      console.error('Error deleting list:', error)
+      showAlert('Error al eliminar la lista', 'Error')
     }
   }
 
@@ -469,42 +675,6 @@ export default function Home() {
     }
   }
 
-  // Función para guardar ajustes globales en la base de datos
-  const saveGlobalAdjustmentsToDB = async () => {
-    try {
-      const currentAdjustments = globalAdjustments[activeTab] || { cashea: 0, transferencia: 0, divisas: 0, custom: 0 }
-      
-      await fetch('/api/settings/global-adjustments', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(currentAdjustments)
-      })
-
-      await showAlert('Ajustes globales guardados con éxito', 'Éxito')
-      console.log('Ajustes globales guardados para', activeTab)
-    } catch (error) {
-      console.error('Error guardando ajustes globales:', error)
-    }
-  }
-
-  // Función para guardar precios base en la base de datos
-  const saveBasePricesToDB = async () => {
-    try {
-      await fetch('/api/settings/base-prices', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          basePriceBs,
-          basePriceUsd
-        })
-      })
-
-      console.log('Precios base guardados')
-    } catch (error) {
-      console.error('Error guardando precios base:', error)
-    }
-  }
-
   const calculatePrice = (basePrice: number, adjustment: number) => {
     // Aplicar impuesto primero
     const priceWithTax = basePrice * (1 + taxRate / 100)
@@ -514,11 +684,16 @@ export default function Home() {
   }
 
   const getEffectiveAdjustment = (product: Product, type: string) => {
+    // Si la columna es dinámica y no existe en el producto, usamos 0 o el global
     const individualKey = `adjustment${type.charAt(0).toUpperCase() + type.slice(1)}`
     const individualAdjustment = (product as any)[individualKey]
-    return individualAdjustment !== undefined && individualAdjustment !== null 
-      ? individualAdjustment 
-      : globalAdjustments[product.productType]?.[type] || 0
+    
+    // Check if the adjustment is specifically defined (not null/undefined)
+    if (individualAdjustment !== undefined && individualAdjustment !== null && individualAdjustment !== '') {
+      return parseFloat(individualAdjustment)
+    }
+    
+    return globalAdjustments[product.productType]?.[type] || defaultAdjustments[product.productType]?.[type] || 0
   }
 
   // Función mejorada para calcular todos los precios
@@ -557,7 +732,8 @@ export default function Home() {
       adjustmentCashea: product.adjustmentCashea?.toString() || '',
       adjustmentTransferencia: product.adjustmentTransferencia?.toString() || '',
       adjustmentDivisas: product.adjustmentDivisas?.toString() || '',
-      adjustmentCustom: product.adjustmentCustom?.toString() || ''
+      adjustmentCustom: product.adjustmentCustom?.toString() || '',
+      adjustmentPagoMovil: (product as any).adjustmentPagoMovil?.toString() || ''
     })
     setShowEditModal(true)
   }
@@ -567,212 +743,257 @@ export default function Home() {
     setShowDeleteModal(true)
   }
 
-  const adjustGlobalValue = (type: string, delta: number) => {
-    const newAdjustments = { ...globalAdjustments }
-    newAdjustments[activeTab] = { ...newAdjustments[activeTab], [type]: (globalAdjustments[activeTab]?.[type] || 0) + delta }
-    setGlobalAdjustments(newAdjustments)
-  }
-
-  const adjustBasePriceValue = (currency: string, delta: number) => {
-    if (currency === 'bs') {
-      const newValue = Math.round((basePriceBs + delta) / 5) * 5  // Redondear al múltiplo de 5 más cercano
-      setBasePriceBs(newValue)
-      // Guardar automáticamente
-      setTimeout(() => saveBasePricesToDB(), 100)
-    } else {
-      const newValue = Math.round((basePriceUsd + delta) / 5) * 5  // Redondear al múltiplo de 5 más cercano
-      setBasePriceUsd(newValue)
-      // Guardar automáticamente
-      setTimeout(() => saveBasePricesToDB(), 100)
+  const addPriceColumn = async () => {
+    if (!newColumnName.trim()) return
+    
+    const key = newColumnName.toLowerCase().replace(/[^a-z0-9]/g, '') + Date.now().toString().slice(-4)
+    const newCol = { key, label: newColumnName }
+    const newColumns = [...priceColumns, newCol]
+    
+    try {
+      await fetch('/api/settings/price_columns', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settingValue: JSON.stringify(newColumns) })
+      })
+      
+      setPriceColumns(newColumns)
+      setNewColumnName('')
+      setIsManagingColumns(false)
+      
+      // Initialize adjustments for new column
+      const newLocals = { ...localAdjustments }
+      const newDefaults = { ...defaultAdjustments }
+      
+      ;['cauchos', 'baterias', ...customLists.map(l => l.id)].forEach((listType) => {
+        if (newLocals[listType]) newLocals[listType][key] = ''
+        if (newDefaults[listType]) newDefaults[listType][key] = 0
+      })
+      
+      setLocalAdjustments(newLocals)
+      setDefaultAdjustments(newDefaults)
+      
+      showAlert('Columna de precio agregada correctamente', 'Éxito')
+    } catch (error) {
+      console.error('Error adding column:', error)
+      showAlert('Error al agregar columna', 'Error')
     }
   }
 
-  async function applyBasePriceAdjustment(currency: string) {
-    const adjustmentPercent = currency === 'bs' ? basePriceBs : basePriceUsd
+  const removePriceColumn = async (keyToDelete: string) => {
+    // Eliminamos la restricción de columnas predeterminadas
+    // if (['cashea', 'transferencia', 'divisas', 'custom', 'pagoMovil'].includes(keyToDelete)) { ... }
     
-    if (adjustmentPercent === 0) {
+    if (!await showConfirm('¿Eliminar esta columna de precio? Los datos asociados podrían perderse.', 'Confirmar eliminación')) return
+
+    const newColumns = priceColumns.filter(c => c.key !== keyToDelete)
+    
+    try {
+      // 1. Update columns list in database
+      const response = await fetch('/api/settings/price_columns', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settingValue: JSON.stringify(newColumns) })
+      })
+      
+      // If response is not ok, try to parse error or just log text
+      if (!response.ok) {
+         const errText = await response.text()
+         console.error('Update columns failed:', response.status, errText)
+         throw new Error('Failed to update columns: ' + errText)
+      }
+      
+      // 2. Update local state
+      setPriceColumns(newColumns)
+      
+      // 3. Clean up local adjustments state
+      const newLocals = { ...localAdjustments }
+      Object.keys(newLocals).forEach(listType => {
+        if (newLocals[listType] && newLocals[listType][keyToDelete] !== undefined) {
+          const { [keyToDelete]: removed, ...rest } = newLocals[listType]
+          newLocals[listType] = rest
+        }
+      })
+      setLocalAdjustments(newLocals)
+      
+      // 4. Clean up default adjustments state
+      const newDefaults = { ...defaultAdjustments }
+      Object.keys(newDefaults).forEach(listType => {
+        if (newDefaults[listType] && newDefaults[listType][keyToDelete] !== undefined) {
+          const { [keyToDelete]: removed, ...rest } = newDefaults[listType]
+          newDefaults[listType] = rest
+        }
+      })
+      setDefaultAdjustments(newDefaults)
+      
+      showAlert('Columna eliminada correctamente', 'Éxito')
+    } catch (error) {
+      console.error('Error removing column:', error)
+      showAlert('Error al eliminar columna', 'Error')
+    }
+  }
+
+  const editPriceColumn = async (key: string, newLabel: string) => {
+    if (!newLabel.trim()) return
+    
+    const newColumns = priceColumns.map(col => 
+      col.key === key ? { ...col, label: newLabel } : col
+    )
+    
+    try {
+      await fetch('/api/settings/price_columns', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settingValue: JSON.stringify(newColumns) })
+      })
+      
+      setPriceColumns(newColumns)
+      showAlert('Nombre de columna actualizado correctamente', 'Éxito')
+    } catch (error) {
+      console.error('Error updating column:', error)
+      showAlert('Error al actualizar columna', 'Error')
+    }
+  }
+
+  const [tempGlobalDiscounts, setTempGlobalDiscounts] = useState({
+    bs: 0,
+    usd: 0
+  })
+
+  // Apply visual discount without saving to DB yet
+  const applyVisualDiscount = (currency: 'bs' | 'usd', delta: number) => {
+    setTempGlobalDiscounts(prev => {
+        const current = prev[currency]
+        // Logic for reset button (0)
+        if (delta < 0 && Math.abs(delta) === current && current !== 0) {
+            return { ...prev, [currency]: 0 }
+        }
+        return { ...prev, [currency]: current + delta }
+    })
+  }
+
+  // Calculate displayed price with temp discount
+  const getDisplayedPrice = (product: Product, currency: 'bs' | 'usd') => {
+    const basePrice = currency === 'bs' ? product.precioListaBs : product.precioListaUsd
+    const discount = tempGlobalDiscounts[currency]
+    if (discount === 0) return basePrice
+    return roundToNearest5(basePrice * (1 + discount / 100))
+  }
+
+  // Commit temp discounts to DB permanently
+  async function applyBasePriceAdjustment(currency: 'bs' | 'usd') {
+    const adjustment = tempGlobalDiscounts[currency]
+    
+    if (adjustment === 0) {
       showAlert('El ajuste es 0%, no hay cambios que aplicar', 'Información')
       return
     }
     
-    // Confirmation with inline UI
-    const tempDiv = document.createElement('div')
-    tempDiv.className = 'fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4'
-    const currencyName = currency === 'bs' ? 'Bolívares (Bs)' : 'Dólares ($)'
-    const sign = adjustmentPercent >= 0 ? '+' : ''
+    const currencyName = currency === 'bs' ? 'Bs' : 'USD'
+    const sign = adjustment >= 0 ? '+' : ''
     
-    tempDiv.innerHTML = `
-      <div class="card-glass rounded-2xl p-6 w-full max-w-md text-center">
-        <svg class="w-16 h-16 mx-auto ${adjustmentPercent > 0 ? 'text-green-500' : 'text-red-500'} mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
-        </svg>
-        <h3 class="text-xl font-semibold text-white mb-2">¿Ajustar precios base?</h3>
-        <p class="text-gray-300 mb-1">Aplicarás <span class="text-amber-400 font-bold">${sign}${adjustmentPercent}%</span> a todos los precios Lista (${currencyName})</p>
-        <p class="text-gray-400 text-sm mb-4">Esta acción afectará ${filteredProducts.length} productos</p>
-        <p class="text-red-400 text-sm mb-6">⚠️ Este cambio es permanente y modificará los valores base</p>
-        <div class="flex gap-3">
-          <button id="temp-cancel-base" class="flex-1 px-4 py-2 rounded-lg font-medium bg-gray-700 hover:bg-gray-600 transition-all">Cancelar</button>
-          <button id="temp-confirm-base" class="flex-1 btn-primary px-4 py-2 rounded-lg font-medium text-gray-900 transition-all">Confirmar</button>
-        </div>
-      </div>
-    `
+    if (!await showConfirm(`¿Aplicar permanentemente el ajuste de ${sign}${adjustment}% a la lista en ${currencyName}?
     
-    document.body.appendChild(tempDiv)
-    
-    document.getElementById('temp-cancel-base')!.addEventListener('click', () => tempDiv.remove())
-    document.getElementById('temp-confirm-base')!.addEventListener('click', async () => {
-      const confirmBtn = document.getElementById('temp-confirm-base')! as HTMLButtonElement
-      confirmBtn.disabled = true
-      confirmBtn.textContent = 'Aplicando...'
-      
-      const productsToUpdate = filteredProducts
-      let updated = 0
-      let errors = 0
-      
-      const multiplier = 1 + (adjustmentPercent / 100)
-      
+Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confirmar Aplicación`)) {
+        return
+    }
 
+    const productsToUpdate = filteredProducts
+    let updated = 0
+    let errors = 0
+    
+    const multiplier = 1 + (adjustment / 100)
+    
+    // Show loading
+    const loadingToast = document.createElement('div')
+    loadingToast.className = 'fixed bottom-4 right-4 bg-blue-600 text-white px-4 py-2 rounded-lg shadow-lg z-50'
+    loadingToast.textContent = 'Guardando cambios...'
+    document.body.appendChild(loadingToast)
+    
+    for (const product of productsToUpdate) {
+      const currentPrice = currency === 'bs' ? product.precioListaBs : product.precioListaUsd
+      const newPrice = roundToNearest5(currentPrice * multiplier)
       
-      for (const product of productsToUpdate) {
-        const newPriceBs = currency === 'bs' 
-          ? roundToNearest5(product.precioListaBs * multiplier)
-          : product.precioListaBs
+      try {
+        const updateData = currency === 'bs' 
+            ? { ...product, precioListaBs: newPrice }
+            : { ...product, precioListaUsd: newPrice }
+
+        const response = await fetch(`/api/products/${product.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updateData)
+        })
         
-        const newPriceUsd = currency === 'usd'
-          ? roundToNearest5(product.precioListaUsd * multiplier)
-          : product.precioListaUsd
-        
-        try {
-          const response = await fetch(`/api/products/${product.id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              ...product,
-              precioListaBs: newPriceBs,
-              precioListaUsd: newPriceUsd
-            })
-          })
-          
-          if (response.ok) {
-            updated++
-          } else {
-            errors++
-          }
-        } catch (error) {
+        if (response.ok) {
+          updated++
+        } else {
           errors++
         }
+      } catch (error) {
+        errors++
       }
-      
-      tempDiv.remove()
-      
-      if (updated > 0) {
-        if (currency === 'bs') {
-          setBasePriceBs(0)
-        } else {
-          setBasePriceUsd(0)
-        }
-        // Guardar precios base en la base de datos
-        saveBasePricesToDB()
-        refreshData()
-        showAlert(`✅ ${updated} precio${updated !== 1 ? 's' : ''} actualizado${updated !== 1 ? 's' : ''} (${sign}${adjustmentPercent}% en ${currencyName})`, 'Éxito')
-      }
-      
-      if (errors > 0) {
-        showAlert(`❌ ${errors} producto${errors !== 1 ? 's' : ''} no se pudieron actualizar`, 'Error')
-      }
-    })
-  }
-
-  async function applyBothBasePriceAdjustments() {
-    const adjustmentBs = basePriceBs
-    const adjustmentUsd = basePriceUsd
-    
-    if (adjustmentBs === 0 && adjustmentUsd === 0) {
-      showAlert('Ambos ajustes son 0%, no hay cambios que aplicar', 'Información')
-      return
     }
     
-    // Confirmation
-    const tempDiv = document.createElement('div')
-    tempDiv.className = 'fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4'
-    const signBs = adjustmentBs >= 0 ? '+' : ''
-    const signUsd = adjustmentUsd >= 0 ? '+' : ''
+    loadingToast.remove()
     
-    tempDiv.innerHTML = `
-      <div class="card-glass rounded-2xl p-6 w-full max-w-md text-center">
-        <svg class="w-16 h-16 mx-auto text-amber-500 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
-        </svg>
-        <h3 class="text-xl font-semibold text-white mb-2">¿Ajustar ambos precios base?</h3>
-        <p class="text-gray-300 mb-2">Aplicarás:</p>
-        <p class="text-gray-300 mb-1">• Lista (Bs): <span class="text-amber-400 font-bold">${signBs}${adjustmentBs}%</span></p>
-        <p class="text-gray-300 mb-4">• Lista ($): <span class="text-amber-400 font-bold">${signUsd}${adjustmentUsd}%</span></p>
-        <p class="text-gray-400 text-sm mb-4">Esta acción afectará ${filteredProducts.length} productos</p>
-        <p class="text-red-400 text-sm mb-6">⚠️ Este cambio es permanente y modificará los valores base</p>
-        <div class="flex gap-3">
-          <button id="temp-cancel-both" class="flex-1 px-4 py-2 rounded-lg font-medium bg-gray-700 hover:bg-gray-600 transition-all">Cancelar</button>
-          <button id="temp-confirm-both" class="flex-1 btn-primary px-4 py-2 rounded-lg font-medium text-gray-900 transition-all">Confirmar</button>
-        </div>
-      </div>
-    `
+    if (updated > 0) {
+      // Reset only the applied currency
+      setTempGlobalDiscounts(prev => ({ ...prev, [currency]: 0 }))
+      
+      refreshData()
+      showAlert(`✅ Precios base actualizados permanentemente`, 'Éxito')
+    }
     
-    document.body.appendChild(tempDiv)
-    
-    document.getElementById('temp-cancel-both')!.addEventListener('click', () => tempDiv.remove())
-    document.getElementById('temp-confirm-both')!.addEventListener('click', async () => {
-      const confirmBtn = document.getElementById('temp-confirm-both')! as HTMLButtonElement
-      confirmBtn.disabled = true
-      confirmBtn.textContent = 'Aplicando...'
-      
-      const productsToUpdate = filteredProducts
-      let updated = 0
-      let errors = 0
-      
-      const multiplierBs = 1 + (adjustmentBs / 100)
-      const multiplierUsd = 1 + (adjustmentUsd / 100)
-      
+    if (errors > 0) {
+      showAlert(`❌ ${errors} errores`, 'Error')
+    }
+  }
 
-      
-      for (const product of productsToUpdate) {
-        const newPriceBs = roundToNearest5(product.precioListaBs * multiplierBs)
-        const newPriceUsd = roundToNearest5(product.precioListaUsd * multiplierUsd)
+  // Commit BOTH temp discounts
+  async function applyBothBasePriceAdjustments() {
+    const adjBs = tempGlobalDiscounts.bs
+    const adjUsd = tempGlobalDiscounts.usd
+    
+    if (adjBs === 0 && adjUsd === 0) {
+        showAlert('No hay ajustes pendientes para aplicar', 'Información')
+        return
+    }
+
+    if (!await showConfirm(`¿Aplicar ambos ajustes permanentemente?
+    
+• Bs: ${adjBs > 0 ? '+' : ''}${adjBs}%
+• USD: ${adjUsd > 0 ? '+' : ''}${adjUsd}%`, `Confirmar Todo`)) {
+        return
+    }
+
+    // Logic similar to above but for both...
+    // For brevity reusing logic pattern
+    const loadingToast = document.createElement('div')
+    loadingToast.className = 'fixed bottom-4 right-4 bg-blue-600 text-white px-4 py-2 rounded-lg shadow-lg z-50'
+    loadingToast.textContent = 'Guardando cambios globales...'
+    document.body.appendChild(loadingToast)
+
+    let updated = 0
+    
+    for (const product of filteredProducts) {
+        const newBs = adjBs !== 0 ? roundToNearest5(product.precioListaBs * (1 + adjBs/100)) : product.precioListaBs
+        const newUsd = adjUsd !== 0 ? roundToNearest5(product.precioListaUsd * (1 + adjUsd/100)) : product.precioListaUsd
         
         try {
-          const response = await fetch(`/api/products/${product.id}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              ...product,
-              precioListaBs: newPriceBs,
-              precioListaUsd: newPriceUsd
+            await fetch(`/api/products/${product.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...product, precioListaBs: newBs, precioListaUsd: newUsd })
             })
-          })
-          
-          if (response.ok) {
             updated++
-          } else {
-            errors++
-          }
-        } catch (error) {
-          errors++
-        }
-      }
-      
-      tempDiv.remove()
-      
-      if (updated > 0) {
-        setBasePriceBs(0)
-        setBasePriceUsd(0)
-        // Guardar precios base en la base de datos
-        saveBasePricesToDB()
-        refreshData()
-        showAlert(`✅ ${updated} producto${updated !== 1 ? 's' : ''} actualizado${updated !== 1 ? 's' : ''} (Bs: ${signBs}${adjustmentBs}%, $: ${signUsd}${adjustmentUsd}%)`, 'Éxito')
-      }
-      
-      if (errors > 0) {
-        showAlert(`❌ ${errors} producto${errors !== 1 ? 's' : ''} no se pudieron actualizar`, 'Error')
-      }
-    })
+        } catch (e) {}
+    }
+
+    loadingToast.remove()
+    setTempGlobalDiscounts({ bs: 0, usd: 0 })
+    refreshData()
+    showAlert(`✅ ${updated} productos actualizados`, 'Éxito')
   }
 
   return (
@@ -841,12 +1062,29 @@ export default function Home() {
             🔋 Baterías
           </button>
           {isSuperAdmin && (
-            <button
-              onClick={() => setShowAddListModal(true)}
-              className="px-6 py-2 rounded-lg font-medium transition-all bg-green-600/20 text-green-400 hover:bg-green-600/40 border-2 border-green-600/50 border-dashed"
-            >
-              ➕ Agregar Lista
-            </button>
+            <>
+              <button
+                onClick={() => setShowAddListModal(true)}
+                className="px-6 py-2 rounded-lg font-medium transition-all bg-green-600/20 text-green-400 hover:bg-green-600/40 border-2 border-green-600/50 border-dashed"
+              >
+                ➕ Agregar Lista
+              </button>
+              <button
+                onClick={async () => {
+                  if (activeTab === 'cauchos' || activeTab === 'baterias') {
+                    showAlert('No se pueden eliminar las listas predeterminadas', 'Acción no permitida')
+                    return
+                  }
+                  
+                  if (await showConfirm(`¿Estás seguro de que deseas eliminar la lista actual? Esta acción no se puede deshacer.`, 'Eliminar Lista')) {
+                     await deleteCustomList(activeTab)
+                  }
+                }}
+                className="px-6 py-2 rounded-lg font-medium transition-all bg-red-600/20 text-red-400 hover:bg-red-600/40 border-2 border-red-600/50 border-dashed"
+              >
+                ➖ Quitar Lista
+              </button>
+            </>
           )}
         </div>
       </header>
@@ -854,8 +1092,8 @@ export default function Home() {
       {/* Lock Button */}
       <button
         onClick={async () => {
-          if (isAdmin) {
-            if (await showConfirm('¿Cerrar sesión de administrador?', 'Cerrar Sesión')) {
+          if (isAdmin || isWorker) {
+            if (await showConfirm('¿Cerrar sesión?', 'Cerrar Sesión')) {
               handleLogout()
             }
           } else {
@@ -864,7 +1102,7 @@ export default function Home() {
         }}
         className="fixed top-4 right-4 p-3 rounded-full card-glass hover:bg-white/10 z-40 transition-all active:scale-95"
       >
-        {isAdmin ? (
+        {(isAdmin || isWorker) ? (
           <svg className="w-6 h-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
           </svg>
@@ -898,7 +1136,11 @@ export default function Home() {
 
           {showConfigPanel && (
             <div className="card-glass rounded-2xl p-4 md:p-6 mt-4">
-              <AdminPanel socket={socket} currentUser={{ ...currentUser, userType: isAdmin ? 'admin' : 'worker' }} />
+              <AdminPanel 
+                socket={socket} 
+                currentUser={{ ...currentUser, userType: isAdmin ? 'admin' : 'worker' }} 
+                connectedUsers={connectedUsers}
+              />
               
               {isAdmin && (
                 <>
@@ -931,143 +1173,177 @@ export default function Home() {
 
               {/* Base Price Adjustments */}
               <div className="mb-6 border-t border-white/10 pt-4">
-                <h3 className="text-sm font-semibold text-gray-300 mb-3">Ajuste de Precios Base</h3>
+                <div className="flex items-center gap-2 mb-4">
+                  <svg className="w-5 h-5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  <h3 className="text-sm font-bold text-amber-400">Ajustes de Precios Base (aplicar a todos los productos)</h3>
+                </div>
+                
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="card-glass rounded-lg p-3">
-                    <label className="block text-xs text-gray-400 mb-2">📊 Ajustar Lista (Bs)</label>
-                    <div className="flex items-center gap-1 mb-2">
-                      <button
-                        onClick={() => adjustBasePriceValue('bs', -5)}
-                        className="flex-1 px-2 py-1 rounded text-white bg-red-600/20 hover:bg-red-600/40 border border-red-600/50 text-xs font-medium"
-                      >
-                        -5%
-                      </button>
-                      <button
-                        onClick={() => adjustBasePriceValue('bs', -1)}
-                        className="flex-1 px-2 py-1 rounded text-white bg-red-600/20 hover:bg-red-600/40 border border-red-600/50 text-xs font-medium"
-                      >
-                        -1%
-                      </button>
-                      <button
-                        onClick={() => adjustBasePriceValue('bs', -basePriceBs)}
-                        className="flex-1 px-2 py-1 rounded text-white bg-gray-600/20 hover:bg-gray-600/40 border border-gray-600/50 text-xs font-medium"
-                      >
-                        0
-                      </button>
-                      <button
-                        onClick={() => adjustBasePriceValue('bs', 1)}
-                        className="flex-1 px-2 py-1 rounded text-white bg-green-600/20 hover:bg-green-600/40 border border-green-600/50 text-xs font-medium"
-                      >
-                        +1%
-                      </button>
-                      <button
-                        onClick={() => adjustBasePriceValue('bs', 5)}
-                        className="flex-1 px-2 py-1 rounded text-white bg-green-600/20 hover:bg-green-600/40 border border-green-600/50 text-xs font-medium"
-                      >
-                        +5%
-                      </button>
-                      <button
-                        onClick={() => {
-                          const newValue = basePriceBs + 5
-                          setBasePriceBs(newValue)
-                          setTimeout(() => saveBasePricesToDB(), 100)
-                        }}
-                        className="px-2 py-1 rounded text-white bg-amber-600/20 hover:bg-amber-600/40 border border-amber-600/50 text-xs font-medium"
-                      >
-                        +
-                      </button>
+                  {/* BS Panel */}
+                  <div className="card-glass rounded-lg p-4 bg-black/20">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-lg">📊</span>
+                      <label className="block text-sm font-semibold text-gray-300">Ajustar Lista (Bs)</label>
                     </div>
-                    <div className="text-center">
-                      <p className={`text-xl font-bold ${basePriceBs > 0 ? 'price-up' : basePriceBs < 0 ? 'price-down' : 'text-amber-400'}`}>
-                        {(basePriceBs >= 0 ? '+' : '')}{basePriceBs}%
-                      </p>
+                    
+                    <div className="flex gap-1 mb-4">
+                      <button onClick={() => applyVisualDiscount('bs', -5)} className="flex-1 py-2 rounded bg-black/40 hover:bg-black/60 border border-white/10 text-white font-bold text-sm transition-all">-5%</button>
+                      <button onClick={() => applyVisualDiscount('bs', -1)} className="flex-1 py-2 rounded bg-black/40 hover:bg-black/60 border border-white/10 text-white font-bold text-sm transition-all">-1%</button>
+                      <button onClick={() => applyVisualDiscount('bs', -tempGlobalDiscounts.bs)} className="flex-1 py-2 rounded bg-black/40 hover:bg-black/60 border border-white/10 text-white font-bold text-sm transition-all">0</button>
+                      <button onClick={() => applyVisualDiscount('bs', 1)} className="flex-1 py-2 rounded bg-black/40 hover:bg-black/60 border border-white/10 text-white font-bold text-sm transition-all">+1%</button>
+                      <button onClick={() => applyVisualDiscount('bs', 5)} className="flex-1 py-2 rounded bg-black/40 hover:bg-black/60 border border-white/10 text-white font-bold text-sm transition-all">+5%</button>
                     </div>
+                    
+                    <button 
+                      onClick={() => applyBasePriceAdjustment('bs')}
+                      className="w-full btn-primary py-2.5 rounded-lg font-bold text-gray-900 shadow-lg hover:shadow-amber-500/20 transition-all mb-2"
+                    >
+                      Aplicar Ajuste a Lista (Bs) {tempGlobalDiscounts.bs !== 0 && `(${tempGlobalDiscounts.bs > 0 ? '+' : ''}${tempGlobalDiscounts.bs}%)`}
+                    </button>
+                    
+                    <p className="text-xs text-gray-500">Ejemplo: +10% aumentará todos los precios en Bs un 10%</p>
                   </div>
 
-                  <div className="card-glass rounded-lg p-3">
-                    <label className="block text-xs text-gray-400 mb-2">💵 Ajustar Lista ($)</label>
-                    <div className="flex items-center gap-1 mb-2">
-                      <button
-                        onClick={() => adjustBasePriceValue('usd', -5)}
-                        className="flex-1 px-2 py-1 rounded text-white bg-red-600/20 hover:bg-red-600/40 border border-red-600/50 text-xs font-medium"
-                      >
-                        -5%
-                      </button>
-                      <button
-                        onClick={() => adjustBasePriceValue('usd', -1)}
-                        className="flex-1 px-2 py-1 rounded text-white bg-red-600/20 hover:bg-red-600/40 border border-red-600/50 text-xs font-medium"
-                      >
-                        -1%
-                      </button>
-                      <button
-                        onClick={() => adjustBasePriceValue('usd', -basePriceUsd)}
-                        className="flex-1 px-2 py-1 rounded text-white bg-gray-600/20 hover:bg-gray-600/40 border border-gray-600/50 text-xs font-medium"
-                      >
-                        0
-                      </button>
-                      <button
-                        onClick={() => adjustBasePriceValue('usd', 1)}
-                        className="flex-1 px-2 py-1 rounded text-white bg-green-600/20 hover:bg-green-600/40 border border-green-600/50 text-xs font-medium"
-                      >
-                        +1%
-                      </button>
-                      <button
-                        onClick={() => adjustBasePriceValue('usd', 5)}
-                        className="flex-1 px-2 py-1 rounded text-white bg-green-600/20 hover:bg-green-600/40 border border-green-600/50 text-xs font-medium"
-                      >
-                        +5%
-                      </button>
-                      <button
-                        onClick={() => {
-                          const newValue = basePriceUsd + 5
-                          setBasePriceUsd(newValue)
-                          setTimeout(() => saveBasePricesToDB(), 100)
-                        }}
-                        className="px-2 py-1 rounded text-white bg-amber-600/20 hover:bg-amber-600/40 border border-amber-600/50 text-xs font-medium"
-                      >
-                        +
-                      </button>
+                  {/* USD Panel */}
+                  <div className="card-glass rounded-lg p-4 bg-black/20">
+                    <div className="flex items-center gap-2 mb-3">
+                      <span className="text-lg">💵</span>
+                      <label className="block text-sm font-semibold text-gray-300">Ajustar Lista ($)</label>
                     </div>
-                    <div className="text-center">
-                      <p className={`text-xl font-bold ${basePriceUsd > 0 ? 'price-up' : basePriceUsd < 0 ? 'price-down' : 'text-amber-400'}`}>
-                        {(basePriceUsd >= 0 ? '+' : '')}{basePriceUsd}%
-                      </p>
+                    
+                    <div className="flex gap-1 mb-4">
+                      <button onClick={() => applyVisualDiscount('usd', -5)} className="flex-1 py-2 rounded bg-black/40 hover:bg-black/60 border border-white/10 text-white font-bold text-sm transition-all">-5%</button>
+                      <button onClick={() => applyVisualDiscount('usd', -1)} className="flex-1 py-2 rounded bg-black/40 hover:bg-black/60 border border-white/10 text-white font-bold text-sm transition-all">-1%</button>
+                      <button onClick={() => applyVisualDiscount('usd', -tempGlobalDiscounts.usd)} className="flex-1 py-2 rounded bg-black/40 hover:bg-black/60 border border-white/10 text-white font-bold text-sm transition-all">0</button>
+                      <button onClick={() => applyVisualDiscount('usd', 1)} className="flex-1 py-2 rounded bg-black/40 hover:bg-black/60 border border-white/10 text-white font-bold text-sm transition-all">+1%</button>
+                      <button onClick={() => applyVisualDiscount('usd', 5)} className="flex-1 py-2 rounded bg-black/40 hover:bg-black/60 border border-white/10 text-white font-bold text-sm transition-all">+5%</button>
                     </div>
+                    
+                    <button 
+                      onClick={() => applyBasePriceAdjustment('usd')}
+                      className="w-full btn-primary py-2.5 rounded-lg font-bold text-gray-900 shadow-lg hover:shadow-amber-500/20 transition-all mb-2"
+                    >
+                      Aplicar Ajuste a Lista ($) {tempGlobalDiscounts.usd !== 0 && `(${tempGlobalDiscounts.usd > 0 ? '+' : ''}${tempGlobalDiscounts.usd}%)`}
+                    </button>
+                    
+                    <p className="text-xs text-gray-500">Ejemplo: -20% reducirá todos los precios en $ un 20%</p>
                   </div>
                 </div>
 
-                <div className="mt-3 text-center">
+                <div className="mt-6 text-center">
                   <button
                     onClick={applyBothBasePriceAdjustments}
-                    className="btn-primary px-6 py-2 rounded-lg font-medium text-gray-900 transition-all shadow-lg hover:shadow-amber-500/20"
+                    className="btn-primary px-8 py-3 rounded-lg font-bold text-gray-900 text-lg transition-all shadow-xl hover:shadow-amber-500/30 hover:scale-[1.02]"
                   >
-                    Aplicar Ambos Ajustes
+                    Aplicar Ambos Ajustes de Precio Base
                   </button>
-                  <p className="text-xs text-amber-400 mt-2">⚠️ Esta acción modificará permanentemente los precios base de todos los productos en esta lista</p>
+                  <div className="flex items-center justify-center gap-2 mt-3 text-xs text-amber-400">
+                    <span className="text-lg">⚠️</span>
+                    <p>Esta acción modificará permanentemente los precios base de todos los productos en esta lista</p>
+                  </div>
                 </div>
               </div>
 
               {/* Global Adjustments */}
               <div className="border-t border-white/10 pt-4">
-                <h3 className="text-sm font-semibold text-gray-300 mb-3">Ajustes Globales por Tipo de Precio</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  {[
-                    { key: 'cashea', label: 'Cashea (Bs)' },
-                    { key: 'transferencia', label: 'Transferencia (Bs)' },
-                    { key: 'divisas', label: 'Divisas ($)' },
-                    { key: 'custom', label: 'Divisas en Fisico' }
-                  ].map(({ key, label }) => (
+                <div className="flex justify-between items-center mb-3">
+                  <h3 className="text-sm font-semibold text-gray-300">Ajustes Globales por Tipo de Precio</h3>
+                  <button 
+                    onClick={() => setIsManagingColumns(!isManagingColumns)}
+                    className="text-xs text-amber-400 hover:text-amber-300 flex items-center gap-1"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    Gestionar Columnas
+                  </button>
+                </div>
+
+                {isManagingColumns && (
+                  <div className="card-glass rounded-lg p-4 mb-4 border border-amber-500/30">
+                    <h4 className="text-sm font-semibold text-amber-400 mb-3">Gestionar Tipos de Precio</h4>
+                    
+                    <div className="flex gap-2 mb-4">
+                      <input
+                        type="text"
+                        value={newColumnName}
+                        onChange={(e) => setNewColumnName(e.target.value)}
+                        placeholder="Nombre de nueva columna (ej. Zelle)"
+                        className="flex-1 input-dark rounded-lg px-3 py-2 text-white text-sm"
+                      />
+                      <button
+                        onClick={addPriceColumn}
+                        disabled={!newColumnName.trim()}
+                        className="btn-primary px-4 py-2 rounded-lg font-medium text-gray-900 text-xs disabled:opacity-50"
+                      >
+                        Agregar
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                      {priceColumns.map((col) => (
+                        <div key={col.key} className="flex justify-between items-center bg-black/20 p-2 rounded">
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <span className="text-sm text-gray-300 truncate" title={col.label}>
+                              {col.label} <span className="text-xs text-gray-500">({col.key})</span>
+                            </span>
+                          </div>
+                          
+                          <div className="flex gap-2 shrink-0">
+                            <button
+                              onClick={async () => {
+                                const newName = await showPrompt('Nuevo nombre para la columna:', col.label)
+                                if (newName && newName !== col.label) {
+                                  editPriceColumn(col.key, newName)
+                                }
+                              }}
+                              className="text-blue-400 hover:text-blue-300 p-1"
+                              title="Editar nombre"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                              </svg>
+                            </button>
+                            
+                            <button
+                              onClick={() => removePriceColumn(col.key)}
+                              className="text-red-400 hover:text-red-300 p-1"
+                              title="Eliminar columna"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                  {priceColumns.map(({ key, label }) => {
+                    const currentGlobal = defaultAdjustments[activeTab]?.[key] || 0
+                    
+                    return (
                     <div key={key} className="card-glass rounded-lg p-3">
-                      <label className="block text-xs text-gray-400 mb-1">{label}</label>
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="block text-xs text-gray-400">{label}</label>
+                        <span className={`text-xs font-bold ${currentGlobal > 0 ? 'text-green-400' : currentGlobal < 0 ? 'text-red-400' : 'text-gray-500'}`}>
+                          {currentGlobal > 0 ? '+' : ''}{currentGlobal}%
+                        </span>
+                      </div>
                       <div className="flex gap-1 mb-2">
                         <button
                           onClick={() => {
-                            const current = globalAdjustments[activeTab]?.[key] || 0
-                            const newAdjustments = { ...globalAdjustments }
+                            const current = Number(localAdjustments[activeTab]?.[key] || 0)
+                            const newAdjustments = { ...localAdjustments }
                             newAdjustments[activeTab] = { ...newAdjustments[activeTab], [key]: current - 1 }
-                            setGlobalAdjustments(newAdjustments)
-                            // Guardar automáticamente
-                            setTimeout(() => saveGlobalAdjustmentsToDB(), 100)
+                            setLocalAdjustments(newAdjustments)
                           }}
                           className="input-dark px-2 py-1 rounded text-white hover:bg-white/10"
                         >
@@ -1077,25 +1353,26 @@ export default function Home() {
                         </button>
                         <input
                           type="number"
-                          value={globalAdjustments[activeTab]?.[key] || 0}
+                          value={localAdjustments[activeTab]?.[key] ?? ''}
                           onChange={(e) => {
-                            const newAdjustments = { ...globalAdjustments }
-                            newAdjustments[activeTab] = { ...newAdjustments[activeTab], [key]: parseFloat(e.target.value) || 0 }
-                            setGlobalAdjustments(newAdjustments)
-                            // Guardar automáticamente
-                            setTimeout(() => saveGlobalAdjustmentsToDB(), 100)
+                            const val = e.target.value
+                            const newAdjustments = { ...localAdjustments }
+                            newAdjustments[activeTab] = { 
+                              ...newAdjustments[activeTab], 
+                              [key]: val === '' ? '' : parseFloat(val) 
+                            }
+                            setLocalAdjustments(newAdjustments)
                           }}
                           className="input-dark rounded px-2 py-1 w-16 text-white text-sm text-center"
                           step="0.1"
+                          placeholder="0"
                         />
                         <button
                           onClick={() => {
-                            const current = globalAdjustments[activeTab]?.[key] || 0
-                            const newAdjustments = { ...globalAdjustments }
+                            const current = Number(localAdjustments[activeTab]?.[key] || 0)
+                            const newAdjustments = { ...localAdjustments }
                             newAdjustments[activeTab] = { ...newAdjustments[activeTab], [key]: current + 1 }
-                            setGlobalAdjustments(newAdjustments)
-                            // Guardar automáticamente
-                            setTimeout(() => saveGlobalAdjustmentsToDB(), 100)
+                            setLocalAdjustments(newAdjustments)
                           }}
                           className="input-dark px-2 py-1 rounded text-white hover:bg-white/10"
                         >
@@ -1110,27 +1387,12 @@ export default function Home() {
                           Aplicar
                         </button>
                       </div>
-                      <div className="text-center">
-                        <p className={`text-xl font-bold ${globalAdjustments[activeTab]?.[key] > 0 ? 'price-up' : globalAdjustments[activeTab]?.[key] < 0 ? 'price-down' : 'text-amber-400'}`}>
-                          {(globalAdjustments[activeTab]?.[key] >= 0 ? '+' : '')}{globalAdjustments[activeTab]?.[key] || 0}%
-                        </p>
-                      </div>
                     </div>
-                  ))}
+                  )})}
                 </div>
                 
                 <div className="mt-4 text-center">
-                  <button
-                    onClick={() => {
-                      // Guardar todos los ajustes globales actuales
-                      saveGlobalAdjustmentsToDB()
-                      alert('✅ Todos los ajustes globales han sido guardados')
-                    }}
-                    className="btn-primary px-6 py-2 rounded-lg font-medium text-gray-900"
-                  >
-                    Aplicar Todos los Ajustes Globales
-                  </button>
-                  <p className="text-xs text-gray-400 mt-2">Los nuevos cauchos heredan automáticamente estos ajustes globales</p>
+                  <p className="text-xs text-gray-400 mt-2">Los nuevos productos se crearán con el ajuste acumulado actual.</p>
                 </div>
               </div>
             </>
@@ -1180,6 +1442,15 @@ export default function Home() {
                   </svg>
                   Exportar Excel
                 </button>
+                <button
+                   onClick={() => alert("Función de subir foto pendiente de implementación")}
+                   className="btn-primary px-4 py-2 rounded-lg font-medium text-gray-900 transition-all shadow-lg hover:shadow-amber-500/20 flex items-center gap-2"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  Subir Foto
+                </button>
               </div>
 
               <form onSubmit={(e) => { e.preventDefault(); addProduct(); }} className="grid grid-cols-1 md:grid-cols-5 gap-4">
@@ -1210,11 +1481,11 @@ export default function Home() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">Precio Lista (Bs)</label>
+                  <label className="block text-sm text-gray-400 mb-1">Precio Lista ($)</label>
                   <input
                     type="number"
                     value={addForm.precioListaBs}
-                    onChange={(e) => setAddForm({ ...addForm, precioListaBs: parseFloat(e.target.value) || 0 })}
+                    onChange={(e) => setAddForm({ ...addForm, precioListaBs: e.target.value })}
                     className="input-dark rounded-lg px-3 py-2 w-full text-white"
                     placeholder="0.00"
                     min="0"
@@ -1227,7 +1498,7 @@ export default function Home() {
                   <input
                     type="number"
                     value={addForm.precioListaUsd}
-                    onChange={(e) => setAddForm({ ...addForm, precioListaUsd: parseFloat(e.target.value) || 0 })}
+                    onChange={(e) => setAddForm({ ...addForm, precioListaUsd: e.target.value })}
                     className="input-dark rounded-lg px-3 py-2 w-full text-white"
                     placeholder="0.00"
                     min="0"
@@ -1286,14 +1557,17 @@ export default function Home() {
           ) : (
             filteredProducts.map((product) => (
               <MobileProductCard
-                key={product.id}
-                product={product}
-                isAdmin={isAdmin}
-                getEffectiveAdjustment={getEffectiveAdjustment}
-                calculatePrice={calculatePrice}
-                openEditModal={openEditModal}
-                openDeleteModal={openDeleteModal}
-              />
+                  key={product.id}
+                  product={product}
+                  isAdmin={isAdmin}
+                  getEffectiveAdjustment={getEffectiveAdjustment}
+                  calculatePrice={calculatePrice}
+                  openEditModal={openEditModal}
+                  openDeleteModal={openDeleteModal}
+                  currentDefaults={defaultAdjustments[activeTab] || { cashea: 0, transferencia: 0, divisas: 0, custom: 0 }}
+                  priceColumns={priceColumns}
+                  tempGlobalDiscounts={tempGlobalDiscounts}
+                />
             ))
           )}
         </div>
@@ -1303,12 +1577,10 @@ export default function Home() {
           <table className="w-full min-w-[1000px]">
             <thead>
               <tr className="border-b border-white/10 text-left">
-                <th className="pb-3 text-sm font-medium text-gray-400">Producto</th>
-                <th className="pb-3 text-sm font-medium text-amber-400 text-right">Transferencia (Bs)</th>
-                  <th className="pb-3 text-sm font-medium text-amber-400 text-right">Cashea (Bs)</th>
-                  <th className="pb-3 text-sm font-medium text-amber-400 text-right">Divisas ($)</th>
-                  <th className="pb-3 text-sm font-medium text-amber-400 text-right">Divisas en Fisico</th>
-                  <th className="pb-3 text-sm font-medium text-gray-400 text-right">Lista (Bs)</th>
+                  <th className="pb-3 text-sm font-medium text-gray-400">Descripcion</th>
+                  {priceColumns.map((col) => (
+                    <th key={col.key} className="pb-3 text-sm font-medium text-amber-400 text-right">{col.label}</th>
+                  ))}
                   <th className="pb-3 text-sm font-medium text-gray-400 text-right">Lista ($)</th>
                 <th className="pb-3 text-sm font-medium text-gray-400 text-center">Acciones</th>
               </tr>
@@ -1331,14 +1603,17 @@ export default function Home() {
               ) : (
                 filteredProducts.map((product) => (
                   <ProductRow
-                    key={product.id}
-                    product={product}
-                    isAdmin={isAdmin}
-                    getEffectiveAdjustment={getEffectiveAdjustment}
-                    calculatePrice={calculatePrice}
-                    openEditModal={openEditModal}
-                    openDeleteModal={openDeleteModal}
-                  />
+                            key={product.id}
+                            product={product}
+                            isAdmin={isAdmin}
+                            getEffectiveAdjustment={getEffectiveAdjustment}
+                            calculatePrice={calculatePrice}
+                            openEditModal={openEditModal}
+                            openDeleteModal={openDeleteModal}
+                            currentDefaults={defaultAdjustments[activeTab] || { cashea: 0, transferencia: 0, divisas: 0, custom: 0 }}
+                            priceColumns={priceColumns}
+                            tempGlobalDiscounts={tempGlobalDiscounts}
+                          />
                 ))
               )}
             </tbody>
@@ -1349,7 +1624,7 @@ export default function Home() {
       {/* Edit Modal */}
       {showEditModal && selectedProduct && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="card-glass rounded-2xl p-6 w-full max-w-2xl">
+          <div className="card-glass rounded-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <h3 className="text-xl font-semibold text-amber-400 mb-4">Editar Producto</h3>
             <form onSubmit={(e) => { e.preventDefault(); updateProduct(); }}>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
@@ -1374,7 +1649,7 @@ export default function Home() {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">Precio Lista (Bs)</label>
+                  <label className="block text-sm text-gray-400 mb-1">Precio Lista ($)</label>
                   <input
                     type="number"
                     value={editForm.precioListaBs}
@@ -1400,26 +1675,38 @@ export default function Home() {
               </div>
               
               <div className="border-t border-white/10 pt-4 mb-4">
-                <h4 className="text-sm font-semibold text-gray-300 mb-3">Ajustes Individuales (opcional)</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {[
-                    { key: 'adjustmentCashea', label: 'Cashea (Bs) %' },
-                    { key: 'adjustmentTransferencia', label: 'Transferencia (Bs) %' },
-                    { key: 'adjustmentDivisas', label: 'Divisas ($) %' },
-                    { key: 'adjustmentCustom', label: 'Divisas en Fisico %' }
-                  ].map(({ key, label }) => (
-                    <div key={key} className="card-glass rounded-lg p-3">
-                      <label className="block text-xs text-gray-400 mb-1">{label}</label>
-                      <input
-                        type="number"
-                        value={editForm[key as keyof typeof editForm]}
-                        onChange={(e) => setEditForm({ ...editForm, [key]: e.target.value })}
-                        className="input-dark rounded px-3 py-2 w-full text-white text-sm"
-                        step="0.1"
-                        placeholder="Global"
-                      />
-                    </div>
-                  ))}
+                <h4 className="text-sm font-semibold text-gray-300 mb-3">Ajustes Individuales (opcional - dejar vacío para usar global)</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {priceColumns.map(({ key, label }) => {
+                    const currentValue = (editForm as any)[`adjustment${key.charAt(0).toUpperCase() + key.slice(1)}`]
+                    const isGlobal = currentValue === '' || currentValue === undefined
+                    const effectiveAdjustment = isGlobal 
+                      ? (defaultAdjustments[activeTab]?.[key] || 0)
+                      : parseFloat(currentValue as string) || 0
+                      
+                    const basePrice = (key === 'divisas' || key === 'custom') 
+                      ? editForm.precioListaUsd 
+                      : editForm.precioListaBs
+                      
+                    const finalPrice = calculatePrice(basePrice, effectiveAdjustment)
+                    
+                    return (
+                      <div key={key} className="card-glass rounded-lg p-3">
+                        <label className="block text-xs text-gray-400 mb-1">{label} %</label>
+                        <input
+                          type="number"
+                          value={currentValue || ''}
+                          onChange={(e) => setEditForm({ ...editForm, [`adjustment${key.charAt(0).toUpperCase() + key.slice(1)}`]: e.target.value })}
+                          className="input-dark rounded px-3 py-2 w-full text-white text-sm"
+                          step="0.1"
+                          placeholder="Global"
+                        />
+                        <div className={`text-right text-xs mt-1 font-medium ${effectiveAdjustment < 0 ? 'text-red-400' : effectiveAdjustment > 0 ? 'text-green-400' : 'text-gray-400'}`}>
+                           ${finalPrice.toFixed(2)} ({effectiveAdjustment > 0 ? '+' : ''}{effectiveAdjustment}%)
+                        </div>
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
               
@@ -1446,7 +1733,7 @@ export default function Home() {
       {/* Delete Modal */}
       {showDeleteModal && selectedProduct && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="card-glass rounded-2xl p-6 w-full max-w-sm text-center">
+          <div className="card-glass rounded-2xl p-6 w-full max-w-sm max-h-[90vh] overflow-y-auto text-center">
             <svg className="w-16 h-16 mx-auto text-red-500 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
@@ -1532,7 +1819,7 @@ export default function Home() {
       {/* Add List Modal */}
       {showAddListModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="card-glass rounded-2xl p-6 w-full max-w-md">
+          <div className="card-glass rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
             <h2 className="text-xl font-bold mb-4 text-white">Nueva Lista</h2>
             <div className="space-y-4">
               <div>

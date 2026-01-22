@@ -20,7 +20,7 @@ const PORT = 3001
 interface ConnectedUser {
   id: string
   socketId: string
-  userType: 'admin' | 'client' | 'worker'
+  userType: 'admin' | 'worker'
   name?: string
   lastName?: string
   connectedAt: Date
@@ -29,20 +29,44 @@ interface ConnectedUser {
 
 const connectedUsers = new Map<string, ConnectedUser>()
 
-// Store admin credentials (in production, this should be in a secure database)
-const adminCredentials = {
-  password: 'Chirica001*', // Regular Admin key
-  superPassword: 'Chiricapoz001*', // Super Admin key
+// Store credentials (loaded from DB)
+const authConfig = {
+  adminPassword: 'Chirica001*', // Default
+  workerPassword: 'Chirica001*', // Default
+  superPassword: 'Chiricapoz001*',
   maxPasswordChangers: 2,
-  superAdmins: [] as { name: string, lastName: string }[] // Persistent super admins by name
+  superAdmins: [] as { name: string, lastName: string }[]
 }
+
+// Load credentials from DB
+async function loadCredentials() {
+  try {
+    const { data } = await supabase.from('settings').select('*').in('settingKey', ['admin_password', 'worker_password'])
+    if (data) {
+      data.forEach(setting => {
+        if (setting.settingKey === 'admin_password' && setting.settingValue) {
+          authConfig.adminPassword = setting.settingValue
+        }
+        if (setting.settingKey === 'worker_password' && setting.settingValue) {
+          authConfig.workerPassword = setting.settingValue
+        }
+      })
+      console.log('Credentials loaded from DB')
+    }
+  } catch (error) {
+    console.error('Error loading credentials:', error)
+  }
+}
+
+// Initialize
+loadCredentials()
 
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id)
   
-  // When user identifies themselves
+  // When user identifies themselves (Legacy/Auto)
   socket.on('identify-user', (userData: { 
-    userType: 'admin' | 'client' | 'worker',
+    userType: 'admin' | 'worker',
     name?: string,
     lastName?: string 
   }) => {
@@ -65,8 +89,8 @@ io.on('connection', (socket) => {
 
   // Admin authentication
   socket.on('admin-login', (credentials: { name: string, lastName: string, password: string }) => {
-    const isSuperKey = credentials.password === adminCredentials.superPassword
-    const isAdminKey = credentials.password === adminCredentials.password
+    const isSuperKey = credentials.password === authConfig.superPassword
+    const isAdminKey = credentials.password === authConfig.adminPassword
 
     if (isSuperKey || isAdminKey) {
       const user: ConnectedUser = {
@@ -81,13 +105,11 @@ io.on('connection', (socket) => {
       
       connectedUsers.set(socket.id, user)
       
-      // If used super key, they are automatically super admins
       const isSuperAdmin = isSuperKey || 
-                          adminCredentials.superAdmins.length < adminCredentials.maxPasswordChangers || 
-                          adminCredentials.superAdmins.some(sa => sa.name === credentials.name && sa.lastName === credentials.lastName)
+                          authConfig.superAdmins.some(sa => sa.name === credentials.name && sa.lastName === credentials.lastName)
 
-      if (isSuperAdmin && !adminCredentials.superAdmins.some(sa => sa.name === credentials.name && sa.lastName === credentials.lastName)) {
-        adminCredentials.superAdmins.push({ name: credentials.name, lastName: credentials.lastName })
+      if (isSuperAdmin && !authConfig.superAdmins.some(sa => sa.name === credentials.name && sa.lastName === credentials.lastName)) {
+        authConfig.superAdmins.push({ name: credentials.name, lastName: credentials.lastName })
       }
 
       socket.emit('admin-login-success', { 
@@ -106,34 +128,111 @@ io.on('connection', (socket) => {
     }
   })
 
+  // Worker authentication
+  socket.on('worker-login', (credentials: { name: string, lastName: string, password: string }) => {
+    const isWorkerKey = credentials.password === authConfig.workerPassword || credentials.password === authConfig.superPassword
+
+    if (isWorkerKey) {
+      const user: ConnectedUser = {
+        id: socket.id,
+        socketId: socket.id,
+        userType: 'worker',
+        name: credentials.name,
+        lastName: credentials.lastName,
+        connectedAt: new Date(),
+        lastActivity: new Date()
+      }
+      
+      connectedUsers.set(socket.id, user)
+      
+      socket.emit('worker-login-success', { 
+        user: {
+          name: user.name,
+          lastName: user.lastName
+        }
+      })
+      
+      console.log(`Worker logged in: ${credentials.name} ${credentials.lastName}`)
+      broadcastUserList()
+    } else {
+      socket.emit('worker-login-error', 'Contraseña incorrecta')
+    }
+  })
+
   // Change admin password
-  socket.on('change-admin-password', (data: { currentPassword: string, newPassword: string }) => {
+  socket.on('change-admin-password', async (data: { currentPassword: string, newPassword: string }) => {
     const user = connectedUsers.get(socket.id)
     if (!user || user.userType !== 'admin') {
       socket.emit('password-change-error', 'No autorizado')
       return
     }
 
-    // Check if user is super admin
-    const isSuperAdmin = adminCredentials.superAdmins.some(sa => sa.name === user.name && sa.lastName === user.lastName)
+    const isSuperAdmin = authConfig.superAdmins.some(sa => sa.name === user.name && sa.lastName === user.lastName)
     
     if (!isSuperAdmin) {
       socket.emit('password-change-error', 'Solo los administradores principales pueden cambiar la contraseña')
       return
     }
 
-    if (data.currentPassword !== adminCredentials.password) {
+    if (data.currentPassword !== authConfig.adminPassword) {
       socket.emit('password-change-error', 'Contraseña actual incorrecta')
       return
     }
 
     // Change password
-    adminCredentials.password = data.newPassword
+    authConfig.adminPassword = data.newPassword
     
+    // Persist to DB
+    try {
+      const { error } = await supabase.from('settings').upsert({ 
+        settingKey: 'admin_password', 
+        settingValue: data.newPassword,
+        updatedAt: new Date().toISOString()
+      }, { onConflict: 'settingKey' })
+      
+      if (error) throw error
+      
+      socket.emit('password-change-success', 'Contraseña de Admin actualizada correctamente')
+      console.log(`Admin ${user.name} changed admin password`)
+    } catch (e) {
+      console.error('Error saving admin password:', e)
+      socket.emit('password-change-error', 'Error al guardar la contraseña')
+    }
+  })
 
+  // Change worker password
+  socket.on('change-worker-password', async (data: { newPassword: string }) => {
+    const user = connectedUsers.get(socket.id)
+    if (!user || user.userType !== 'admin') {
+      socket.emit('password-change-error', 'No autorizado')
+      return
+    }
+
+    const isSuperAdmin = authConfig.superAdmins.some(sa => sa.name === user.name && sa.lastName === user.lastName)
+    if (!isSuperAdmin) {
+       socket.emit('password-change-error', 'Solo los administradores principales pueden cambiar la contraseña')
+       return
+    }
     
-    socket.emit('password-change-success', 'Contraseña actualizada correctamente')
-    console.log(`Admin ${user.name} ${user.lastName} changed password`)
+    // Change password
+    authConfig.workerPassword = data.newPassword
+    
+    // Persist to DB
+    try {
+      const { error } = await supabase.from('settings').upsert({ 
+        settingKey: 'worker_password', 
+        settingValue: data.newPassword,
+        updatedAt: new Date().toISOString()
+      }, { onConflict: 'settingKey' })
+      
+      if (error) throw error
+      
+      socket.emit('password-change-success', 'Contraseña de Trabajadores actualizada correctamente')
+      console.log(`Admin ${user.name} changed worker password`)
+    } catch (e) {
+      console.error('Error saving worker password:', e)
+      socket.emit('password-change-error', 'Error al guardar la contraseña')
+    }
   })
 
   // Remove admin
@@ -144,8 +243,7 @@ io.on('connection', (socket) => {
       return
     }
 
-    // Check if user is super admin
-    const isSuperAdmin = adminCredentials.superAdmins.some(sa => sa.name === currentUser.name && sa.lastName === currentUser.lastName)
+    const isSuperAdmin = authConfig.superAdmins.some(sa => sa.name === currentUser.name && sa.lastName === currentUser.lastName)
     
     if (!isSuperAdmin) {
       socket.emit('remove-admin-error', 'Solo los administradores principales pueden remover a otros')
@@ -159,7 +257,7 @@ io.on('connection', (socket) => {
     }
 
     // Remove admin privileges
-    targetUser.userType = 'client'
+    targetUser.userType = 'worker'
     connectedUsers.set(targetSocketId, targetUser)
     
     // Notify the removed admin
@@ -170,41 +268,42 @@ io.on('connection', (socket) => {
     
     socket.emit('remove-admin-success', 'Administrador removido correctamente')
     broadcastUserList()
-    console.log(`Admin ${currentUser.name} ${currentUser.lastName} removed admin privileges from ${targetUser.name} ${targetUser.lastName}`)
+    console.log(`Admin ${currentUser.name} removed admin privileges from ${targetUser.name}`)
   })
 
-  // Remove worker (Only Super Admin can do this)
-  socket.on('kick-worker', (targetSocketId: string) => {
+  // Kick user (worker or admin)
+  socket.on('kick-user', (targetSocketId: string) => {
     const currentUser = connectedUsers.get(socket.id)
     if (!currentUser || currentUser.userType !== 'admin') {
-      socket.emit('kick-worker-error', 'No autorizado')
+      socket.emit('kick-error', 'No autorizado')
       return
     }
 
-    // Check if user is super admin
-    const isSuperAdmin = adminCredentials.superAdmins.some(sa => sa.name === currentUser.name && sa.lastName === currentUser.lastName)
+    const isSuperAdmin = authConfig.superAdmins.some(sa => sa.name === currentUser.name && sa.lastName === currentUser.lastName)
     if (!isSuperAdmin) {
-      socket.emit('kick-worker-error', 'Solo los super administradores pueden sacar trabajadores')
+      socket.emit('kick-error', 'Solo los super administradores pueden expulsar usuarios')
       return
     }
 
     const targetUser = connectedUsers.get(targetSocketId)
-    if (!targetUser || targetUser.userType !== 'worker') {
-      socket.emit('kick-worker-error', 'Usuario no encontrado o no es trabajador')
+    if (!targetUser) {
+      socket.emit('kick-error', 'Usuario no encontrado')
       return
     }
 
-    // Disconnect the worker
+    // Disconnect the user
     const targetSocket = io.sockets.sockets.get(targetSocketId)
     if (targetSocket) {
-      targetSocket.disconnect()
+      targetSocket.emit('admin-privileges-removed', 'Has sido desconectado por un administrador')
+      targetSocket.disconnect(true)
     }
     
     connectedUsers.delete(targetSocketId)
-    socket.emit('kick-worker-success', 'Trabajador desconectado')
+    socket.emit('kick-success', 'Usuario desconectado')
     broadcastUserList()
-    console.log(`Admin ${currentUser.name} kicked worker ${targetUser.name}`)
+    console.log(`Admin ${currentUser.name} kicked user ${targetUser.name}`)
   })
+
   socket.on('request-current-data', async () => {
     try {
       const [productsRes, settingsRes] = await Promise.all([

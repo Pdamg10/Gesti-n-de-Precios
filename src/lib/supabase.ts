@@ -83,7 +83,7 @@ export const db = {
   async upsertSetting(setting: any) {
     const { data, error } = await supabase
       .from('settings')
-      .upsert(setting)
+      .upsert(setting, { onConflict: 'settingKey' })
       .select()
     
     if (error) throw error

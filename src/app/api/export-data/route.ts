@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
 
     // Crear datos para Excel
     const worksheetData = [
-      ['Tipo/Marca', 'Medida', 'Precio Lista (Bs)', 'Precio Lista ($)', 'Ajuste Caucha (%)', 'Ajuste Transferencia (%)', 'Ajuste Divisas (%)', 'Ajuste Personalizado (%)'],
+      ['Tipo/Marca', 'Medida', 'Precio Lista ($)', 'Precio Lista ($)', 'Ajuste Caucha (%)', 'Ajuste Transferencia (%)', 'Ajuste Divisas (%)', 'Ajuste Personalizado (%)'],
       ...(products || []).map(product => [
         product.type,
         product.medida,

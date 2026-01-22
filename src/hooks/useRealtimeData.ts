@@ -34,7 +34,7 @@ interface Setting {
 export interface ConnectedUser {
   id: string
   socketId: string
-  userType: 'admin' | 'client' | 'worker'
+  userType: 'admin' | 'worker'
   name?: string
   lastName?: string
   connectedAt: string
@@ -46,7 +46,7 @@ interface RealtimeData {
   settings: Setting[]
 }
 
-export function useRealtimeData(userType: 'admin' | 'client' | 'worker' = 'client', userInfo?: { name?: string, lastName?: string }) {
+export function useRealtimeData(userType: 'admin' | 'worker' = 'worker', userInfo?: { name?: string, lastName?: string }) {
   const [socket, setSocket] = useState<Socket | null>(null)
   const [data, setData] = useState<RealtimeData>({ products: [], settings: [] })
   const [connectedUsers, setConnectedUsers] = useState<ConnectedUser[]>([])
@@ -58,12 +58,12 @@ export function useRealtimeData(userType: 'admin' | 'client' | 'worker' = 'clien
     let activityInterval: NodeJS.Timeout
 
     // Function to load data from API (fallback mode)
-    const loadDataFromAPI = async () => {
+    const loadDataFromAPI = async (signal?: AbortSignal) => {
       try {
         console.log('Loading data from API (fallback mode)...')
         const [productsRes, settingsRes] = await Promise.all([
-          fetch('/api/products'),
-          fetch('/api/settings')
+          fetch('/api/products', { signal }),
+          fetch('/api/settings', { signal })
         ])
         
         if (productsRes.ok && settingsRes.ok) {
@@ -75,26 +75,32 @@ export function useRealtimeData(userType: 'admin' | 'client' | 'worker' = 'clien
           setData({ products, settings })
           console.log('Data loaded from API successfully')
         }
-      } catch (error) {
+      } catch (error: any) {
+        if (error.name === 'AbortError' || signal?.aborted) {
+          console.log('Fetch aborted')
+          return
+        }
         console.error('Error loading data from API:', error)
       }
     }
 
-    // Try to connect to WebSocket service
+    // Initialize socket connection (only once)
     const newSocket = io('/?XTransformPort=3001', {
       transports: ['websocket', 'polling'],
       timeout: 5000,
       reconnectionAttempts: 3
     })
 
+    const controller = new AbortController()
+
     // Set a timeout to detect if WebSocket connection fails
     connectionTimeout = setTimeout(() => {
       if (!newSocket.connected) {
         console.warn('WebSocket connection failed, switching to fallback mode')
-        loadDataFromAPI()
+        loadDataFromAPI(controller.signal)
         
         // Poll for updates every 10 seconds in fallback mode
-        fallbackInterval = setInterval(loadDataFromAPI, 10000)
+        fallbackInterval = setInterval(() => loadDataFromAPI(controller.signal), 10000)
       }
     }, 5000)
 
@@ -104,34 +110,22 @@ export function useRealtimeData(userType: 'admin' | 'client' | 'worker' = 'clien
       clearTimeout(connectionTimeout)
       clearInterval(fallbackInterval)
       
-      // Identify user
-      newSocket.emit('identify-user', { 
-        userType,
-        name: userInfo?.name,
-        lastName: userInfo?.lastName
-      })
-      
       // Request current data when connected
       newSocket.emit('request-current-data')
-      
-      // Request user list if admin or worker
-      if (userType === 'admin' || userType === 'worker') {
-        newSocket.emit('request-user-list')
-      }
     })
 
     newSocket.on('disconnect', () => {
       console.log('Disconnected from realtime service')
       setIsConnected(false)
+      // Do NOT clear users on disconnect to avoid flashing
       
       // Switch to fallback mode on disconnect
-      loadDataFromAPI()
-      fallbackInterval = setInterval(loadDataFromAPI, 10000)
+      loadDataFromAPI(controller.signal)
+      fallbackInterval = setInterval(() => loadDataFromAPI(controller.signal), 10000)
     })
 
     newSocket.on('connect_error', (error) => {
       console.warn('WebSocket connection error:', error.message)
-      // Fallback will be triggered by connectionTimeout
     })
 
     newSocket.on('data-update', (newData: RealtimeData) => {
@@ -142,13 +136,10 @@ export function useRealtimeData(userType: 'admin' | 'client' | 'worker' = 'clien
       }))
     })
 
-    // Listen for user list updates (admin and workers)
-    if (userType === 'admin' || userType === 'worker') {
-      newSocket.on('user-list', (users: ConnectedUser[]) => {
-        console.log('Received user list:', users)
-        setConnectedUsers(users)
-      })
-    }
+    newSocket.on('user-list', (users: ConnectedUser[]) => {
+      console.log('Received user list:', users)
+      setConnectedUsers(users)
+    })
 
     // Send activity updates
     activityInterval = setInterval(() => {
@@ -164,16 +155,37 @@ export function useRealtimeData(userType: 'admin' | 'client' | 'worker' = 'clien
 
     setSocket(newSocket)
 
-    // Load initial data from API immediately (don't wait for WebSocket)
-    loadDataFromAPI()
+    // Load initial data from API immediately
+    loadDataFromAPI(controller.signal)
 
     return () => {
+      controller.abort()
       clearTimeout(connectionTimeout)
       clearInterval(fallbackInterval)
       clearInterval(activityInterval)
       newSocket.close()
     }
-  }, [userType, userInfo?.name, userInfo?.lastName])
+  }, []) // Empty dependency array = create socket ONLY ONCE
+
+  // Separate effect to handle user identification when props change
+  useEffect(() => {
+    if (!socket || !socket.connected) return
+
+    // Identify user for ALL user types (worker, admin)
+    // This ensures the backend knows the name/lastname of the connected socket
+    // enabling them to appear in the "Connected Users" list immediately.
+    socket.emit('identify-user', { 
+      userType,
+      name: userInfo?.name,
+      lastName: userInfo?.lastName
+    })
+
+    // If we are privileged users, we also want to fetch the list to see others
+    if (userType === 'admin' || userType === 'worker') {
+      socket.emit('request-user-list')
+    }
+
+  }, [socket, userType, userInfo?.name, userInfo?.lastName, isConnected])
 
   const updateData = useCallback((type: 'products' | 'settings', newData: any) => {
     setData(prevData => ({

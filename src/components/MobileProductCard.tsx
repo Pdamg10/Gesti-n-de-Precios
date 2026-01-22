@@ -22,6 +22,9 @@ interface MobileProductCardProps {
   calculatePrice: (basePrice: number, adjustment: number) => number
   openEditModal: (product: Product) => void
   openDeleteModal: (product: Product) => void
+  currentDefaults: { [key: string]: number }
+  priceColumns: { key: string, label: string }[]
+  tempGlobalDiscounts?: { bs: number, usd: number }
 }
 
 export default function MobileProductCard({
@@ -30,37 +33,49 @@ export default function MobileProductCard({
   getEffectiveAdjustment,
   calculatePrice,
   openEditModal,
-  openDeleteModal
+  openDeleteModal,
+  currentDefaults,
+  priceColumns,
+  tempGlobalDiscounts = { bs: 0, usd: 0 }
 }: MobileProductCardProps) {
+  const getDisplayedBasePrice = (currency: 'bs' | 'usd') => {
+    const base = currency === 'bs' ? product.precioListaBs : product.precioListaUsd
+    const discount = tempGlobalDiscounts[currency]
+    if (!discount || discount === 0) return base
+    const factor = 1 + (discount / 100)
+    const val = base * factor
+    return Math.round(val * 100) / 100
+  }
+
   return (
-    <div className="card-glass rounded-xl p-5 mb-4 border border-white/10 relative overflow-hidden">
-      {/* Background decoration */}
-      <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/10 rounded-bl-full -mr-4 -mt-4 pointer-events-none" />
-      
-      {/* Header: Product Info & Actions */}
-      <div className="flex justify-between items-start mb-4 relative z-10">
-        <div>
-          <h3 className="text-2xl font-bold text-amber-400 mb-1">{product.medida}</h3>
-          <p className="text-lg text-gray-300 font-medium">{product.type}</p>
+    <div className="card-glass rounded-xl p-3 mb-3 border border-white/10 hover:bg-white/5 transition-all">
+      <div className="flex justify-between items-start mb-3">
+        <div className="flex-1">
+          <div className="flex items-baseline gap-2">
+            <h3 className="text-lg font-bold font-mono text-amber-400">{product.medida}</h3>
+            <span className="text-xs text-gray-400 px-2 py-0.5 rounded-full bg-white/5 border border-white/10">{product.type}</span>
+          </div>
+          <div className="flex gap-3 mt-1 text-xs text-gray-500 font-mono">
+            <span>L($): <span className="text-gray-300">${getDisplayedBasePrice('usd').toFixed(2)}</span></span>
+            <span>L(Bs): <span className="text-gray-300">Bs{getDisplayedBasePrice('bs').toFixed(2)}</span></span>
+          </div>
         </div>
         
         {isAdmin && (
-          <div className="flex gap-2">
-            <button
+          <div className="flex gap-1">
+            <button 
               onClick={() => openEditModal(product)}
-              className="p-3 rounded-lg bg-blue-600/20 hover:bg-blue-600/40 text-blue-400 transition-colors"
-              aria-label="Editar"
+              className="p-2 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20"
             >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
               </svg>
             </button>
-            <button
+            <button 
               onClick={() => openDeleteModal(product)}
-              className="p-3 rounded-lg bg-red-600/20 hover:bg-red-600/40 text-red-400 transition-colors"
-              aria-label="Eliminar"
+              className="p-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20"
             >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
               </svg>
             </button>
@@ -69,27 +84,25 @@ export default function MobileProductCard({
       </div>
 
       {/* Prices Grid */}
-      <div className="grid grid-cols-1 gap-4">
-        {['transferencia', 'cashea', 'divisas', 'custom'].map((type) => {
+      <div className="grid grid-cols-2 gap-2">
+        {(priceColumns || []).map(({ key: type, label }) => {
           const adjustment = getEffectiveAdjustment(product, type)
-          const basePrice = (type === 'divisas' || type === 'custom') ? product.precioListaUsd : product.precioListaBs
-          const finalPrice = calculatePrice(basePrice, adjustment)
-          const isIndividual = (product as any)[`adjustment${type.charAt(0).toUpperCase() + type.slice(1)}`] !== undefined && (product as any)[`adjustment${type.charAt(0).toUpperCase() + type.slice(1)}`] !== null
-          const isUsd = type === 'divisas' || type === 'custom'
           
-          let label = ''
-          if (type === 'transferencia') label = 'Transferencia (Bs)'
-          else if (type === 'cashea') label = 'Cashea (Bs)'
-          else if (type === 'divisas') label = 'Divisas ($)'
-          else label = 'Divisas en Fisico'
+          const isUsd = type === 'divisas' || type === 'custom' || type === 'pagoMovil' || type === 'cashea' || type === 'transferencia' || true
+          const basePrice = isUsd ? getDisplayedBasePrice('usd') : getDisplayedBasePrice('bs')
+          
+          const finalPrice = calculatePrice(basePrice, adjustment)
+          
+          // Determine if individual or global based on value comparison
+          const defaultAdj = currentDefaults?.[type] || 0
+          const isIndividual = Math.abs(adjustment - defaultAdj) > 0.01
 
           return (
-            <div key={type} className="bg-black/20 rounded-lg p-3 border border-white/5">
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-gray-400 text-sm font-medium uppercase tracking-wide">{label}</span>
-                <div className={`flex items-center gap-2 ${adjustment < 0 ? 'text-red-400' : adjustment > 0 ? 'text-green-400' : 'text-gray-400'}`}>
-                  {isIndividual && <span className="text-amber-400 text-xs" title="Ajuste individual">●</span>}
-                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+            <div key={type} className="bg-black/20 rounded-lg p-1.5 border border-white/5 flex flex-col justify-center min-h-[50px]">
+              <div className="flex justify-between items-center mb-0.5">
+                <span className="text-gray-300 text-[9px] font-bold uppercase tracking-wide truncate pr-1 leading-none" title={label}>{label}</span>
+                <div className={`flex items-center gap-0.5 ${adjustment < 0 ? 'text-red-400' : adjustment > 0 ? 'text-green-400' : 'text-gray-400'}`}>
+                  <span className={`text-[8px] font-bold px-1 py-0 rounded-full leading-none ${
                     adjustment < 0 
                       ? 'bg-red-500/10 border border-red-500/30' 
                       : adjustment > 0 
@@ -98,27 +111,21 @@ export default function MobileProductCard({
                   }`}>
                     {(adjustment >= 0 ? '+' : '')}{adjustment}%
                   </span>
+                  {isIndividual && <span className="text-amber-400 text-[8px] leading-none" title="Ajuste individual">●</span>}
                 </div>
               </div>
               
-              <div className="flex justify-between items-end">
-                <div className="text-xs text-gray-600">
-                  Base: {isUsd ? '$' : 'Bs. '}{basePrice.toFixed(2)}
+              <div className="flex items-baseline justify-between w-full">
+                <div className="text-[8px] text-gray-400 font-medium leading-none">
+                  Base: {isUsd ? '$' : 'Bs'}{basePrice.toFixed(2)}
                 </div>
-                <div className="text-2xl font-bold font-mono text-white">
-                  {isUsd ? '$' : 'Bs. '}{finalPrice.toFixed(2)}
-                  <span className="text-xs text-gray-500 ml-1 font-sans font-normal">(Inc. IVA)</span>
+                <div className="text-sm font-bold font-mono text-white leading-none">
+                  {isUsd ? '$' : 'Bs'}{finalPrice.toFixed(2)}
                 </div>
               </div>
             </div>
           )
         })}
-      </div>
-
-      {/* Footer Info */}
-      <div className="mt-4 pt-3 border-t border-white/10 flex justify-between text-xs text-gray-500">
-        <div>Lista (Bs): <span className="text-gray-300 font-mono">Bs. {product.precioListaBs.toFixed(2)}</span></div>
-        <div>Lista ($): <span className="text-gray-300 font-mono">${product.precioListaUsd.toFixed(2)}</span></div>
       </div>
     </div>
   )

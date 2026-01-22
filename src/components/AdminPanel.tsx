@@ -7,11 +7,24 @@ import { useModal } from '@/context/ModalContext'
 interface AdminPanelProps {
   socket: any
   currentUser: any
+  connectedUsers: ConnectedUser[] // Recibir connectedUsers como prop
 }
 
-export default function AdminPanel({ socket, currentUser }: AdminPanelProps) {
-  const { connectedUsers } = useRealtimeData('admin')
+export default function AdminPanel({ socket, currentUser, connectedUsers: propConnectedUsers }: AdminPanelProps) {
+  // Ya no usamos useRealtimeData aquí internamente para obtener usuarios,
+  // confiamos en los props que vienen de page.tsx donde está la conexión principal.
+  // Sin embargo, para compatibilidad si no se pasa, intentamos usar el hook o un array vacío.
+  
+  // NOTA: El problema original era que useRealtimeData crea una NUEVA conexión de socket
+  // cada vez que se invoca. Al llamarlo aquí dentro de AdminPanel, se creaba una segunda conexión
+  // (socketId diferente) que no estaba autenticada ni sincronizada con la principal de page.tsx.
+  // La solución correcta es pasar 'connectedUsers' desde el componente padre (page.tsx)
+  // que ya tiene la conexión 'admin' establecida.
+  
+  const connectedUsers = propConnectedUsers || []
+  
   const [showPasswordModal, setShowPasswordModal] = useState(false)
+  const [passwordModalType, setPasswordModalType] = useState<'admin' | 'worker'>('admin')
   const [passwordForm, setPasswordForm] = useState({
     currentPassword: '',
     newPassword: ''
@@ -25,7 +38,7 @@ export default function AdminPanel({ socket, currentUser }: AdminPanelProps) {
 
   const formatName = (name?: string, lastName?: string) => {
     if (!name) return 'Anónimo'
-    const initial = lastName ? ` ${lastName.charAt(0)}.` : ''
+    const initial = lastName ? ` ${lastName.charAt(0).toUpperCase()}.` : ''
     return `${name}${initial}`
   }
 
@@ -38,7 +51,9 @@ export default function AdminPanel({ socket, currentUser }: AdminPanelProps) {
     setIsLoading(true)
     setMessage('')
 
-    socket.emit('change-admin-password', {
+    const eventName = passwordModalType === 'admin' ? 'change-admin-password' : 'change-worker-password'
+    
+    socket.emit(eventName, {
       currentPassword: passwordForm.currentPassword,
       newPassword: passwordForm.newPassword
     })
@@ -90,13 +105,13 @@ export default function AdminPanel({ socket, currentUser }: AdminPanelProps) {
       return
     }
 
-    socket.emit('kick-worker', targetSocketId)
+    socket.emit('kick-user', targetSocketId)
 
-    socket.on('kick-worker-success', (msg) => {
+    socket.on('kick-success', (msg) => {
       showAlert(msg, 'Éxito')
     })
 
-    socket.on('kick-worker-error', (errorMsg) => {
+    socket.on('kick-error', (errorMsg) => {
       showAlert(errorMsg, 'Error')
     })
   }
@@ -193,20 +208,126 @@ export default function AdminPanel({ socket, currentUser }: AdminPanelProps) {
   return (
     <div className="space-y-6">
 
+      {/* All Users */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-lg font-semibold text-amber-400">Usuarios Conectados</h3>
+          <span className="px-3 py-1 rounded-full bg-white/10 border border-white/10 text-xs font-medium text-gray-300">
+            Total: {connectedUsers.length}
+          </span>
+          <button 
+            onClick={() => socket.emit('request-user-list')}
+            className="ml-2 text-xs text-amber-400 hover:text-amber-300 underline"
+          >
+            Refrescar
+          </button>
+        </div>
+
+        {/* Legend - Only for Admin */}
+        {isAdmin && (
+          <div className="flex flex-wrap gap-4 mb-4 text-xs bg-white/5 p-3 rounded-lg border border-white/10">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-red-500"></span>
+              <span className="text-gray-300">👑 Admin</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+              <span className="text-gray-300">👷 Trabajador</span>
+            </div>
+          </div>
+        )}
+        
+        {connectedUsers.length === 0 && (
+          <div className="text-gray-400 text-sm italic p-4 text-center border border-white/10 rounded-lg">
+            No hay usuarios visibles. Intenta refrescar o verifica la conexión.
+            <br/>Estado del socket: {socket?.connected ? 'Conectado' : 'Desconectado'}
+            <br/>ID: {socket?.id}
+          </div>
+        )}
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {connectedUsers.map((user) => (
+            <div key={user.id} className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/5 hover:border-white/10 transition-all">
+              <div className="flex items-center gap-3">
+                <div className={`w-3 h-3 rounded-full shadow-sm animate-pulse ${
+                    user.userType === 'admin' ? 'bg-red-500 shadow-red-500/50' :
+                    'bg-blue-500 shadow-blue-500/50'
+                  }`}></div>
+                <div>
+                  <div className="text-sm font-semibold flex items-center gap-2">
+                    {user.userType === 'admin' ? '👑' : '👷'}
+                    {formatName(user.name, user.lastName)}
+                    {(user.socketId === socket.id || (currentUser && user.name === currentUser.name && user.lastName === currentUser.lastName)) && (
+                      <span className="text-[10px] bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">Tú</span>
+                    )}
+                  </div>
+                  <div className="text-[10px] text-gray-400 font-medium">
+                    {user.userType === 'admin' ? 'Admin' : 'Worker'} 
+                    <span className="mx-1.5">•</span>
+                    {new Date(user.connectedAt).toLocaleTimeString('es-VE', { 
+                      hour: '2-digit', 
+                      minute: '2-digit' 
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {isSuperAdmin && user.socketId !== currentUser?.socketId && (
+                <div className="flex gap-2">
+                  {user.userType === 'worker' && (
+                    <button
+                      onClick={() => handleKickWorker(user.id, formatName(user.name, user.lastName))}
+                      className="p-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs transition-all border border-red-500/20"
+                      title="Sacar trabajador"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                      </svg>
+                    </button>
+                  )}
+                  {user.userType === 'admin' && isSuperAdmin && (
+                    <button
+                      onClick={() => handleRemoveAdmin(user.id, formatName(user.name, user.lastName))}
+                      className="p-2 rounded-lg bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 text-xs transition-all border border-orange-500/20"
+                      title="Degradar admin"
+                    >
+                      👑 ↓
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
 
       {/* Password Management - Super Admin Only */}
       {isSuperAdmin && (
         <div>
           <h3 className="text-lg font-semibold text-amber-400 mb-3">Gestión de Contraseña</h3>
           <div className="space-y-3">
-            <button
-              onClick={() => setShowPasswordModal(true)}
-              className="btn-primary px-4 py-2 rounded-lg font-medium text-gray-900 w-full md:w-auto"
-            >
-              Cambiar Contraseña de Admin
-            </button>
+            <div className="flex flex-wrap gap-3">
+              <button
+                onClick={() => {
+                  setPasswordModalType('worker')
+                  setShowPasswordModal(true) 
+                }}
+                className="btn-primary px-4 py-2 rounded-lg font-medium text-gray-900 w-full md:w-auto"
+              >
+                Cambiar Contraseña de Trabajadores
+              </button>
+              <button
+                 onClick={() => {
+                   setPasswordModalType('admin')
+                   setShowPasswordModal(true)
+                 }}
+                 className="btn-primary px-4 py-2 rounded-lg font-medium text-gray-900 w-full md:w-auto"
+              >
+                Cambiar Contraseña de Admin
+              </button>
+            </div>
             <p className="text-xs text-gray-400">
-              Eres Super Administrador y puedes cambiar la contraseña general.
+              Eres Administrador y puedes cambiar las contraseñas.
             </p>
           </div>
         </div>
@@ -266,78 +387,13 @@ export default function AdminPanel({ socket, currentUser }: AdminPanelProps) {
         </div>
       )}
 
-      {/* All Users */}
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-lg font-semibold text-amber-400">Usuarios Conectados</h3>
-          <span className="px-3 py-1 rounded-full bg-white/10 border border-white/10 text-xs font-medium text-gray-300">
-            Total: {connectedUsers.length}
-          </span>
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {connectedUsers.map((user) => (
-            <div key={user.id} className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/5 hover:border-white/10 transition-all">
-              <div className="flex items-center gap-3">
-                <div className={`w-3 h-3 rounded-full shadow-sm ${
-                  user.userType === 'admin' ? 'bg-red-500 shadow-red-500/50' :
-                  user.userType === 'worker' ? 'bg-blue-500 shadow-blue-500/50' : 'bg-green-500 shadow-green-500/50'
-                }`}></div>
-                <div>
-                  <div className="text-sm font-semibold flex items-center gap-2">
-                    {user.userType === 'admin' ? '👑' :
-                     user.userType === 'worker' ? '👷' : '👤'}
-                    {formatName(user.name, user.lastName)}
-                    {user.socketId === currentUser?.socketId && (
-                      <span className="text-[10px] bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">Tú</span>
-                    )}
-                  </div>
-                  <div className="text-[10px] text-gray-400 font-medium">
-                    {user.userType === 'admin' ? 'Administrador' :
-                     user.userType === 'worker' ? 'Trabajador' : 'Cliente'} 
-                    <span className="mx-1.5">•</span>
-                    {new Date(user.connectedAt).toLocaleTimeString('es-VE', { 
-                      hour: '2-digit', 
-                      minute: '2-digit' 
-                    })}
-                  </div>
-                </div>
-              </div>
-
-              {isSuperAdmin && user.socketId !== currentUser?.socketId && (
-                <div className="flex gap-2">
-                  {user.userType === 'worker' && (
-                    <button
-                      onClick={() => handleKickWorker(user.id, formatName(user.name, user.lastName))}
-                      className="p-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs transition-all border border-red-500/20"
-                      title="Sacar trabajador"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                      </svg>
-                    </button>
-                  )}
-                  {user.userType === 'admin' && isSuperAdmin && (
-                    <button
-                      onClick={() => handleRemoveAdmin(user.id, formatName(user.name, user.lastName))}
-                      className="p-2 rounded-lg bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 text-xs transition-all border border-orange-500/20"
-                      title="Degradar admin"
-                    >
-                      👑 ↓
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-
       {/* Password Change Modal */}
       {showPasswordModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="card-glass rounded-2xl p-6 w-full max-w-md">
-            <h3 className="text-xl font-semibold text-white mb-4">Cambiar Contraseña de Admin</h3>
+            <h3 className="text-xl font-semibold text-white mb-4">
+              {passwordModalType === 'admin' ? 'Cambiar Contraseña de Admin' : 'Cambiar Contraseña de Trabajadores'}
+            </h3>
             
             <div className="space-y-4">
               <div>

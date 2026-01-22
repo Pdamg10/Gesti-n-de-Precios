@@ -24,6 +24,9 @@ interface ProductRowProps {
   calculatePrice: (basePrice: number, adjustment: number) => number
   openEditModal: (product: Product) => void
   openDeleteModal: (product: Product) => void
+  currentDefaults: { [key: string]: number }
+  priceColumns: { key: string, label: string }[]
+  tempGlobalDiscounts?: { bs: number, usd: number }
 }
 
 export default function ProductRow({
@@ -32,24 +35,39 @@ export default function ProductRow({
   getEffectiveAdjustment,
   calculatePrice,
   openEditModal,
-  openDeleteModal
+  openDeleteModal,
+  currentDefaults,
+  priceColumns,
+  tempGlobalDiscounts = { bs: 0, usd: 0 }
 }: ProductRowProps) {
+  const getDisplayedBasePrice = (currency: 'bs' | 'usd') => {
+    const base = currency === 'bs' ? product.precioListaBs : product.precioListaUsd
+    const discount = tempGlobalDiscounts[currency]
+    if (!discount || discount === 0) return base
+    const factor = 1 + (discount / 100)
+    const val = base * factor
+    return Math.round(val * 100) / 100
+  }
+
   return (
-    <tr key={product.id} className="border-b border-white/5 hover:bg-white/5">
+    <tr key={product.id} className="border-b border-white/5 hover:bg-white/10 transition-colors">
       <td className="py-3 pr-3">
         <div className="font-mono text-amber-400 font-semibold">{product.medida}</div>
         <div className="text-sm text-gray-400">{product.type}</div>
       </td>
-      {['transferencia', 'cashea', 'divisas', 'custom'].map((type) => {
+      {(priceColumns || []).map(({ key: type }) => {
         const adjustment = getEffectiveAdjustment(product, type)
-        const basePrice = (type === 'divisas' || type === 'custom') ? product.precioListaUsd : product.precioListaBs
-        const finalPrice = calculatePrice(basePrice, adjustment)
-        const isIndividual = (product as any)[`adjustment${type.charAt(0).toUpperCase() + type.slice(1)}`] !== undefined && (product as any)[`adjustment${type.charAt(0).toUpperCase() + type.slice(1)}`] !== null
         const isUsd = type === 'divisas' || type === 'custom'
+        const basePrice = isUsd ? getDisplayedBasePrice('usd') : getDisplayedBasePrice('bs')
+        const finalPrice = calculatePrice(basePrice, adjustment)
+        
+        // Determine if individual or global based on value comparison
+        const defaultAdj = currentDefaults?.[type] || 0
+        const isIndividual = Math.abs(adjustment - defaultAdj) > 0.01
         
         return (
           <td key={type} className="py-3 px-2 text-right">
-            <div className="text-xs text-gray-500 mb-0.5">Base: {isUsd ? '$' : 'Bs. '}{basePrice.toFixed(2)}</div>
+            <div className="text-xs text-gray-300 mb-0.5 font-medium">Base: {isUsd ? '$' : '$'}{basePrice.toFixed(2)}</div>
             <div className={`text-lg mb-0.5 font-bold ${adjustment < 0 ? 'text-red-400' : adjustment > 0 ? 'text-green-400' : 'text-gray-400'}`}>
               <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-bold ${
                 adjustment < 0 
@@ -62,12 +80,12 @@ export default function ProductRow({
               </span>
               {isIndividual && <span className="text-amber-400 ml-1" title="Ajuste individual">●</span>}
             </div>
-            <div className="font-mono text-xs font-medium text-white">Total: {isUsd ? '$' : 'Bs. '}{finalPrice.toFixed(2)}</div>
+            <div className="font-mono text-xs font-medium text-white">Total: {isUsd ? '$' : '$'}{finalPrice.toFixed(2)}</div>
           </td>
         )
       })}
-      <td className="py-3 px-2 text-right font-mono text-sm">Bs. {product.precioListaBs.toFixed(2)}</td>
-      <td className="py-3 px-2 text-right font-mono text-sm">${product.precioListaUsd.toFixed(2)}</td>
+      <td className="py-3 px-2 text-right font-mono text-sm">${getDisplayedBasePrice('bs').toFixed(2)}</td>
+      <td className="py-3 px-2 text-right font-mono text-sm">${getDisplayedBasePrice('usd').toFixed(2)}</td>
       <td className="py-3 pl-2 text-center">
         <div className="flex justify-center gap-1">
           {isAdmin ? (

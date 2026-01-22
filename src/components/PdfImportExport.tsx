@@ -35,7 +35,7 @@ export default function PdfImportExport({ products, activeTab, onImport }: PdfIm
       pdf.setFontSize(8)
       
       // Encabezados
-      const headers = ['Producto', 'Medida', 'Lista Bs', 'Lista $', 'Cashea %', 'Transferencia %', 'Divisas %', 'Otro %']
+      const headers = ['Producto', 'Medida', 'Lista $', 'Lista $', 'Cashea %', 'Transferencia %', 'Divisas %', 'Otro %']
       const colWidths = [40, 35, 25, 25, 20, 25, 20, 20]
       let xPosition = 20
       
