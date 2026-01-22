@@ -145,6 +145,3 @@ Si tienes problemas:
 ---
 
 **Hecho con ❤️ usando Next.js y Supabase**
-=======
-# Gesti-n-de-Precios
->>>>>>> e7e34a8bbc8f033df97d7a55259fb8cd505809a2

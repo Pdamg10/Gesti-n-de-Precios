@@ -6,6 +6,7 @@ import PdfImportExport from '@/components/PdfImportExport'
 import AuthModal from '@/components/AuthModal'
 import AdminPanel from '@/components/AdminPanel'
 import ProductRow from '@/components/ProductRow'
+import MobileProductCard from '@/components/MobileProductCard'
 import { useRealtimeData } from '@/hooks/useRealtimeData'
 import { roundToNearest5 } from '@/lib/utils'
 import { useModal } from '@/context/ModalContext'
@@ -379,17 +380,42 @@ export default function Home() {
     
     try {
       for (const product of selectedProducts) {
-        await fetch('/api/products', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            productType: activeTab,
-            type: product.type,
-            medida: product.medida,
-            precioListaBs: product.precio,
-            precioListaUsd: 0
+        // Verificar si el producto ya existe (por tipo y medida)
+        const existingProduct = products.find(p => 
+          p.productType === activeTab &&
+          p.type.toLowerCase() === product.type.toLowerCase() && 
+          p.medida.toLowerCase() === product.medida.toLowerCase()
+        )
+
+        if (existingProduct) {
+          // Actualizar producto existente
+          await fetch('/api/products', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              id: existingProduct.id,
+              precioListaBs: product.precio,
+              // Mantener otros valores
+              productType: activeTab,
+              type: product.type,
+              medida: product.medida,
+              precioListaUsd: existingProduct.precioListaUsd
+            })
           })
-        })
+        } else {
+          // Crear nuevo producto
+          await fetch('/api/products', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              productType: activeTab,
+              type: product.type,
+              medida: product.medida,
+              precioListaBs: product.precio,
+              precioListaUsd: 0
+            })
+          })
+        }
       }
       
       setShowPreviewModal(false)
@@ -793,16 +819,7 @@ export default function Home() {
               handleLogout()
             }
           } else {
-            const password = await showPrompt('Contraseña de administrador:', 'Acceso Administrador', '', true)
-            if (password === ADMIN_PASSWORD) {
-              handleLogin('admin', { isSuperAdmin: false })
-              showAlert('Acceso concedido - Modo Administrador activado', 'Éxito')
-            } else if (password === SUPER_ADMIN_PASSWORD) {
-              handleLogin('admin', { isSuperAdmin: true })
-              showAlert('Acceso concedido - Modo Super Administrador activado', 'Éxito')
-            } else if (password !== null) {
-              showAlert('Contraseña incorrecta', 'Error')
-            }
+            setShowAuthModal(true)
           }
         }}
         className="fixed top-4 right-4 p-3 rounded-full card-glass hover:bg-white/10 z-40 transition-all active:scale-95"
@@ -1212,7 +1229,37 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* Mobile View */}
+        <div className="md:hidden space-y-4">
+          {filteredProducts.length === 0 ? (
+            <div className="text-center py-12 text-gray-500">
+              <svg className="w-16 h-16 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+              </svg>
+              <p className="text-lg font-medium">
+                {searchTerm 
+                  ? 'No se encontraron resultados' 
+                  : `No hay ${activeTab === 'cauchos' ? 'cauchos' : 'baterías'} registrados`
+                }
+              </p>
+            </div>
+          ) : (
+            filteredProducts.map((product) => (
+              <MobileProductCard
+                key={product.id}
+                product={product}
+                isAdmin={isAdmin}
+                getEffectiveAdjustment={getEffectiveAdjustment}
+                calculatePrice={calculatePrice}
+                openEditModal={openEditModal}
+                openDeleteModal={openDeleteModal}
+              />
+            ))
+          )}
+        </div>
+
+        {/* Desktop View */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full min-w-[1000px]">
             <thead>
               <tr className="border-b border-white/10 text-left">
@@ -1441,6 +1488,15 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      <AuthModal
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        onLogin={handleLogin}
+        currentSocket={socket}
+        adminPassword={ADMIN_PASSWORD}
+        superAdminPassword={SUPER_ADMIN_PASSWORD}
+      />
     </div>
   )
 }

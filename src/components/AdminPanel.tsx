@@ -101,6 +101,92 @@ export default function AdminPanel({ socket, currentUser }: AdminPanelProps) {
     })
   }
 
+  const handleBackup = async () => {
+    try {
+      setIsLoading(true)
+      const [productsRes, settingsRes] = await Promise.all([
+        fetch('/api/products'),
+        fetch('/api/settings')
+      ])
+      
+      const products = await productsRes.json()
+      const settings = await settingsRes.json()
+      
+      const backupData = {
+        timestamp: new Date().toISOString(),
+        products,
+        settings
+      }
+      
+      const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `backup-precios-${new Date().toISOString().split('T')[0]}.json`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      
+      showAlert('Copia de seguridad descargada con éxito', 'Éxito')
+    } catch (error) {
+      console.error('Error creating backup:', error)
+      showAlert('Error al crear la copia de seguridad', 'Error')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleRestore = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    // Validate file type
+    if (file.type !== 'application/json' && !file.name.endsWith('.json')) {
+      showAlert('Por favor selecciona un archivo JSON válido', 'Formato Incorrecto')
+      return
+    }
+
+    if (!await showConfirm('¿Estás seguro de que quieres restaurar la base de datos? Esto sobrescribirá los datos existentes con los del archivo.', 'Confirmar Restauración')) {
+      // Clear input so user can select same file again if they cancelled
+      event.target.value = ''
+      return
+    }
+
+    try {
+      setIsLoading(true)
+      const text = await file.text()
+      const backupData = JSON.parse(text)
+      
+      if (!backupData.products || !backupData.settings) {
+        throw new Error('Formato de archivo inválido: faltan datos de productos o configuración')
+      }
+
+      const response = await fetch('/api/admin/restore', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(backupData)
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Error en la restauración')
+      }
+
+      showAlert('Base de datos restaurada con éxito', 'Éxito')
+      // Optional: Refresh page or trigger re-fetch logic if not fully reactive via socket
+    } catch (error: any) {
+      console.error('Error restoring database:', error)
+      showAlert(error.message || 'Error al restaurar la base de datos', 'Error')
+    } finally {
+      setIsLoading(false)
+      event.target.value = '' // Reset input
+    }
+  }
+
   const admins = connectedUsers.filter(user => user.userType === 'admin')
   const canChangePassword = currentUser?.canChangePassword
 
@@ -115,13 +201,67 @@ export default function AdminPanel({ socket, currentUser }: AdminPanelProps) {
           <div className="space-y-3">
             <button
               onClick={() => setShowPasswordModal(true)}
-              className="btn-primary px-4 py-2 rounded-lg font-medium text-gray-900"
+              className="btn-primary px-4 py-2 rounded-lg font-medium text-gray-900 w-full md:w-auto"
             >
               Cambiar Contraseña de Admin
             </button>
             <p className="text-xs text-gray-400">
               Eres Super Administrador y puedes cambiar la contraseña general.
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* Backup - Super Admin Only */}
+      {isSuperAdmin && (
+        <div className="border-t border-white/10 pt-4">
+          <h3 className="text-lg font-semibold text-amber-400 mb-3">Copia de Seguridad y Restauración</h3>
+          <div className="space-y-4">
+            <div className="p-4 rounded-lg bg-blue-900/20 border border-blue-500/30">
+              <h4 className="text-sm font-medium text-blue-300 mb-2">Descargar Copia de Seguridad</h4>
+              <p className="text-xs text-gray-400 mb-3">
+                Genera un archivo JSON con todos los productos y configuraciones actuales.
+              </p>
+              <button
+                onClick={handleBackup}
+                disabled={isLoading}
+                className="w-full md:w-auto px-4 py-2 rounded-lg font-medium bg-blue-600 hover:bg-blue-500 text-white transition-all shadow-lg flex items-center gap-2 justify-center"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                {isLoading ? 'Procesando...' : 'Descargar Copia de Seguridad (JSON)'}
+              </button>
+            </div>
+
+            <div className="p-4 rounded-lg bg-red-900/20 border border-red-500/30">
+              <h4 className="text-sm font-medium text-red-300 mb-2">Restaurar Base de Datos</h4>
+              <p className="text-xs text-gray-400 mb-3">
+                Sube un archivo de copia de seguridad (JSON) para restaurar los datos. 
+                <span className="text-red-400 font-bold block mt-1">⚠️ Esto sobrescribirá los datos existentes.</span>
+              </p>
+              <div className="relative">
+                <input
+                  type="file"
+                  accept=".json"
+                  onChange={handleRestore}
+                  disabled={isLoading}
+                  className="hidden"
+                  id="restore-file-input"
+                />
+                <label
+                  htmlFor="restore-file-input"
+                  className={`w-full md:w-auto inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium text-white transition-all shadow-lg cursor-pointer ${
+                    isLoading ? 'bg-gray-600 cursor-not-allowed' : 'bg-red-600 hover:bg-red-500'
+                  }`}
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                  </svg>
+                  {isLoading ? 'Procesando...' : 'Subir y Restaurar (JSON)'}
+                </label>
+              </div>
+            </div>
           </div>
         </div>
       )}

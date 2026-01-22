@@ -49,11 +49,11 @@ export default function ProductRow({
         return (
           <td key={type} className="py-3 px-2 text-right">
             <div className="text-xs text-gray-500 mb-0.5">Base: ${basePrice.toFixed(2)}</div>
-            <div className={`text-lg mb-0.5 font-bold ${adjustment > 0 ? 'text-red-400' : adjustment < 0 ? 'text-green-400' : 'text-gray-400'}`}>
+            <div className={`text-lg mb-0.5 font-bold ${adjustment < 0 ? 'text-red-400' : adjustment > 0 ? 'text-green-400' : 'text-gray-400'}`}>
               <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-bold ${
-                adjustment > 0 
+                adjustment < 0 
                   ? 'bg-red-500/20 text-red-400 border border-red-500/50' 
-                  : adjustment < 0 
+                  : adjustment > 0 
                     ? 'bg-green-500/20 text-green-400 border border-green-500/50'
                     : 'bg-gray-500/20 text-gray-400 border border-gray-500/50'
               }`}>
@@ -61,7 +61,7 @@ export default function ProductRow({
               </span>
               {isIndividual && <span className="text-amber-400 ml-1" title="Ajuste individual">●</span>}
             </div>
-            <div className="font-mono text-xs font-medium text-white">+IVA: ${finalPrice.toFixed(2)}</div>
+            <div className="font-mono text-xs font-medium text-white">Total: ${finalPrice.toFixed(2)}</div>
           </td>
         )
       })}

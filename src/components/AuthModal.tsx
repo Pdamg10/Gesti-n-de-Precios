@@ -8,9 +8,11 @@ interface AuthModalProps {
   onClose: () => void
   onLogin: (userType: 'admin' | 'client' | 'worker', userInfo?: any) => void
   currentSocket: any
+  adminPassword?: string
+  superAdminPassword?: string
 }
 
-export default function AuthModal({ isOpen, onClose, onLogin, currentSocket }: AuthModalProps) {
+export default function AuthModal({ isOpen, onClose, onLogin, currentSocket, adminPassword, superAdminPassword }: AuthModalProps) {
   const [authMode, setAuthMode] = useState<'login' | 'identify'>('login')
   const [userType, setUserType] = useState<'admin' | 'client' | 'worker'>('client')
   const [formData, setFormData] = useState({
@@ -36,6 +38,39 @@ export default function AuthModal({ isOpen, onClose, onLogin, currentSocket }: A
       name: formData.name.trim(),
       lastName: formData.lastName.trim(),
       password: formData.password.trim()
+    }
+
+    if (!currentSocket) {
+      setError('No hay conexión con el servidor')
+      return
+    }
+
+    // Verificación optimista local si se proporcionan las contraseñas
+    if (adminPassword && superAdminPassword) {
+      const isSuperKey = trimmedData.password === superAdminPassword
+      const isAdminKey = trimmedData.password === adminPassword
+
+      if (isSuperKey || isAdminKey) {
+        // Login exitoso localmente
+        const isSuperAdmin = isSuperKey
+        
+        onLogin('admin', { 
+          name: trimmedData.name, 
+          lastName: trimmedData.lastName,
+          isSuperAdmin,
+          canChangePassword: isSuperAdmin
+        })
+        onClose()
+        setIsLoading(false)
+
+        // Enviar evento al servidor para registro y visibilidad (en segundo plano)
+        // Usamos identify-user para asegurar que se muestre en la lista
+        currentSocket.emit('admin-login', trimmedData)
+        return
+      }
+      
+      // Si la verificación local falla pero queremos intentar con el servidor (por si cambiaron la clave)
+      // continuamos con el flujo normal abajo
     }
 
     try {
@@ -75,6 +110,11 @@ export default function AuthModal({ isOpen, onClose, onLogin, currentSocket }: A
     const name = formData.name.trim()
     const lastName = formData.lastName.trim()
 
+    if (!currentSocket) {
+      setError('No hay conexión con el servidor')
+      return
+    }
+
     currentSocket.emit('identify-user', {
       userType: 'worker',
       name: name,
@@ -86,6 +126,8 @@ export default function AuthModal({ isOpen, onClose, onLogin, currentSocket }: A
   }
 
   const handleIdentify = () => {
+    if (!currentSocket) return
+
     // Para clientes, el nombre es opcional
     currentSocket.emit('identify-user', {
       userType: 'client',
@@ -160,21 +202,9 @@ export default function AuthModal({ isOpen, onClose, onLogin, currentSocket }: A
               disabled={isLoading}
               className="w-full btn-primary px-4 py-2 rounded-lg font-medium text-gray-900 disabled:opacity-50 transition-all shadow-lg hover:shadow-amber-500/20"
             >
-              {isLoading ? 'Verificando...' : 'Acceder al Panel Admin'}
+              {isLoading ? 'Verificando...' : 'Acceso'}
             </button>
 
-            <div className="text-center">
-              <button
-                onClick={() => {
-                  setAuthMode('identify')
-                  setError('')
-                  setFormData({ name: '', lastName: '', password: '' })
-                }}
-                className="text-amber-400 hover:text-amber-300 text-sm"
-              >
-                No soy administrador
-              </button>
-            </div>
           </div>
         ) : (
           <div className="space-y-4">
