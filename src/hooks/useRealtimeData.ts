@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { RealtimeChannel } from '@supabase/supabase-js'
 
@@ -64,6 +64,15 @@ export function useRealtimeData(userType: 'admin' | 'worker' = 'worker', userInf
   const [isConnected, setIsConnected] = useState(false)
   const [channel, setChannel] = useState<RealtimeChannel | null>(null)
 
+  // Refs to keep track of latest user info inside callbacks without re-subscribing
+  const userInfoRef = useRef(userInfo)
+  const userTypeRef = useRef(userType)
+
+  useEffect(() => {
+    userInfoRef.current = userInfo
+    userTypeRef.current = userType
+  }, [userInfo, userType])
+
   // Load data function
   const loadDataFromAPI = useCallback(async () => {
     try {
@@ -123,13 +132,16 @@ export function useRealtimeData(userType: 'admin' | 'worker' = 'worker', userInf
         setConnectedUsers(users)
       })
       .on('broadcast', { event: 'kick-user' }, (payload) => {
+        const currentInfo = userInfoRef.current
+        const currentType = userTypeRef.current
+
         // Check if I am the target (by Identity OR by Session ID)
         const isIdentityMatch = 
             payload.targetName && 
-            payload.targetName === userInfo?.name &&
+            payload.targetName === currentInfo?.name &&
             payload.targetLastName && 
-            payload.targetLastName === userInfo?.lastName &&
-            payload.targetUserType === userType;
+            payload.targetLastName === currentInfo?.lastName &&
+            payload.targetUserType === currentType;
             
         const isIdMatch = payload.targetId === sessionId;
 
@@ -141,11 +153,13 @@ export function useRealtimeData(userType: 'admin' | 'worker' = 'worker', userInf
         }
       })
       .on('broadcast', { event: 'remove-admin' }, (payload) => {
+         const currentInfo = userInfoRef.current
+         
          const isIdentityMatch = 
             payload.targetName && 
-            payload.targetName === userInfo?.name &&
+            payload.targetName === currentInfo?.name &&
             payload.targetLastName && 
-            payload.targetLastName === userInfo?.lastName;
+            payload.targetLastName === currentInfo?.lastName;
             
          const isIdMatch = payload.targetId === sessionId;
 

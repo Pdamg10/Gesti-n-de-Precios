@@ -282,7 +282,7 @@ export default function AdminPanel({ socket, currentUser, connectedUsers: propCo
                 </div>
               </div>
 
-              {isSuperAdmin && user.socketId !== currentUser?.socketId && (
+              {isSuperAdmin && (user.name !== currentUser?.name || user.lastName !== currentUser?.lastName) && (
                 <div className="flex gap-2">
                   {user.userType === 'worker' && (
                     <button
