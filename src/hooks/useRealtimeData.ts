@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { io, Socket } from 'socket.io-client'
+import { supabase } from '@/lib/supabase'
+import { RealtimeChannel } from '@supabase/supabase-js'
 
 interface Product {
   id: string
@@ -33,7 +34,7 @@ interface Setting {
 
 export interface ConnectedUser {
   id: string
-  socketId: string
+  socketId: string // We'll map Supabase presence_ref to this for compatibility
   userType: 'admin' | 'worker'
   name?: string
   lastName?: string
@@ -46,176 +47,156 @@ interface RealtimeData {
   settings: Setting[]
 }
 
+// Mock socket interface for backward compatibility
+interface MockSocket {
+  id: string
+  connected: boolean
+  emit: (event: string, data?: any) => void
+  on: (event: string, cb: any) => void
+  off: (event: string, cb?: any) => void
+  close: () => void
+}
+
 export function useRealtimeData(userType: 'admin' | 'worker' = 'worker', userInfo?: { name?: string, lastName?: string }) {
-  const [socket, setSocket] = useState<Socket | null>(null)
+  const [socket, setSocket] = useState<MockSocket | null>(null)
   const [data, setData] = useState<RealtimeData>({ products: [], settings: [] })
   const [connectedUsers, setConnectedUsers] = useState<ConnectedUser[]>([])
   const [isConnected, setIsConnected] = useState(false)
+  const [channel, setChannel] = useState<RealtimeChannel | null>(null)
+
+  // Load data function
+  const loadDataFromAPI = useCallback(async () => {
+    try {
+      const [productsRes, settingsRes] = await Promise.all([
+        fetch('/api/products'),
+        fetch('/api/settings')
+      ])
+      
+      if (productsRes.ok && settingsRes.ok) {
+        const [products, settings] = await Promise.all([
+          productsRes.json(),
+          settingsRes.json()
+        ])
+        setData({ products, settings })
+      }
+    } catch (error) {
+      console.error('Error loading data:', error)
+    }
+  }, [])
 
   useEffect(() => {
-    let connectionTimeout: NodeJS.Timeout
-    let fallbackInterval: NodeJS.Timeout
-    let activityInterval: NodeJS.Timeout
+    // Initial data load
+    loadDataFromAPI()
 
-    // Function to load data from API (fallback mode)
-    const loadDataFromAPI = async (signal?: AbortSignal) => {
-      if (signal?.aborted) return
+    // Create a unique ID for this session to mimic socket.id
+    const sessionId = 'user-' + Math.random().toString(36).substring(2, 15)
 
-      try {
-        // Wrapper to silence AbortErrors at the source
-        const safeFetch = async (url: string) => {
-          try {
-            const res = await fetch(url, { signal })
-            return res
-          } catch (err: any) {
-            if (err.name === 'AbortError' || signal?.aborted) return null
-            throw err
-          }
-        }
-
-        const [productsRes, settingsRes] = await Promise.all([
-          safeFetch('/api/products'),
-          safeFetch('/api/settings')
-        ])
+    // Setup Supabase Channel
+    const newChannel = supabase.channel('room1')
+      .on('presence', { event: 'sync' }, () => {
+        const state = newChannel.presenceState()
+        const users: ConnectedUser[] = []
         
-        if (signal?.aborted) return
+        // Transform presence state to ConnectedUser array
+        Object.keys(state).forEach(key => {
+          state[key].forEach((presence: any) => {
+            users.push({
+              id: key, // Use presence key as ID
+              socketId: presence.socketId || key, // Map socketId
+              userType: presence.userType || 'worker',
+              name: presence.name,
+              lastName: presence.lastName,
+              connectedAt: presence.connectedAt || new Date().toISOString(),
+              lastActivity: presence.lastActivity || new Date().toISOString()
+            })
+          })
+        })
         
-        if (productsRes?.ok && settingsRes?.ok) {
-          const [products, settings] = await Promise.all([
-            productsRes.json(),
-            settingsRes.json()
-          ])
+        console.log('Supabase Presence Sync:', users)
+        setConnectedUsers(users)
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, () => {
+        console.log('Product change detected, reloading...')
+        loadDataFromAPI()
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'settings' }, () => {
+        console.log('Settings change detected, reloading...')
+        loadDataFromAPI()
+      })
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('Connected to Supabase Realtime')
+          setIsConnected(true)
           
-          if (!signal?.aborted) {
-            setData({ products, settings })
+          // Track user presence
+          const presenceData = {
+            socketId: sessionId,
+            userType,
+            name: userInfo?.name || 'Anónimo',
+            lastName: userInfo?.lastName || '',
+            connectedAt: new Date().toISOString(),
+            lastActivity: new Date().toISOString()
           }
+          newChannel.track(presenceData)
+        } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+          console.log('Disconnected from Supabase Realtime:', status)
+          setIsConnected(false)
         }
-      } catch (error: any) {
-        // Final safety check
-        if (signal?.aborted) return
+      })
 
-        // Enhanced error suppression
-        if (
-          error.name === 'AbortError' || 
-          error.message?.includes('aborted') || 
-          error.name === 'TypeError' ||
-          error.message === 'Failed to fetch' ||
-          error.message?.includes('net::ERR_ABORTED')
-        ) {
-          return
+    setChannel(newChannel)
+
+    // Create Mock Socket for backward compatibility
+    const mockSocket: MockSocket = {
+      id: sessionId,
+      connected: true,
+      emit: (event: string, payload?: any) => {
+        console.log('Mock Socket Emit:', event, payload)
+        if (event === 'identify-user') {
+          // Re-track with updated info if needed
+          newChannel.track({
+            socketId: sessionId,
+            userType: payload?.userType || userType,
+            name: payload?.name || userInfo?.name,
+            lastName: payload?.lastName || userInfo?.lastName,
+            connectedAt: new Date().toISOString(),
+            lastActivity: new Date().toISOString()
+          })
         }
-        
-        console.error('Error loading data from API:', error)
+        // 'request-user-list' is handled automatically by presence sync
+      },
+      on: (event: string, cb: any) => {
+        // Implement minimal listeners if needed, mostly no-op as we handle state internally
+      },
+      off: () => {},
+      close: () => {
+        supabase.removeChannel(newChannel)
       }
     }
-
-    // Initialize socket connection (only once)
-    // Use localhost:3001 for local development, otherwise try relative path (or update for production URL)
-    const socketUrl = typeof window !== 'undefined' && window.location.hostname === 'localhost' 
-      ? 'http://localhost:3001' 
-      : '/?XTransformPort=3001'
-
-    const newSocket = io(socketUrl, {
-      transports: ['websocket', 'polling'],
-      timeout: 5000,
-      reconnectionAttempts: 3
-    })
-
-    const controller = new AbortController()
-
-    // Set a timeout to detect if WebSocket connection fails
-    connectionTimeout = setTimeout(() => {
-      if (!newSocket.connected) {
-        console.warn('WebSocket connection failed, switching to fallback mode')
-        loadDataFromAPI(controller.signal)
-        
-        // Poll for updates every 10 seconds in fallback mode
-        fallbackInterval = setInterval(() => loadDataFromAPI(controller.signal), 10000)
-      }
-    }, 5000)
-
-    newSocket.on('connect', () => {
-      console.log('Connected to realtime service')
-      setIsConnected(true)
-      clearTimeout(connectionTimeout)
-      clearInterval(fallbackInterval)
-      
-      // Request current data when connected
-      newSocket.emit('request-current-data')
-    })
-
-    newSocket.on('disconnect', () => {
-      console.log('Disconnected from realtime service')
-      setIsConnected(false)
-      // Do NOT clear users on disconnect to avoid flashing
-      
-      // Switch to fallback mode on disconnect
-      loadDataFromAPI(controller.signal)
-      fallbackInterval = setInterval(() => loadDataFromAPI(controller.signal), 10000)
-    })
-
-    newSocket.on('connect_error', (error) => {
-      console.warn('WebSocket connection error:', error.message)
-    })
-
-    newSocket.on('data-update', (newData: RealtimeData) => {
-      console.log('Received real-time update:', newData)
-      setData(prevData => ({
-        ...prevData,
-        ...newData
-      }))
-    })
-
-    newSocket.on('user-list', (users: ConnectedUser[]) => {
-      console.log('Received user list:', users)
-      setConnectedUsers(users)
-    })
-
-    // Send activity updates
-    activityInterval = setInterval(() => {
-      if (newSocket.connected) {
-        newSocket.emit('activity')
-      }
-    }, 30000) // Every 30 seconds
-
-    newSocket.on('admin-privileges-removed', (message: string) => {
-      alert(message)
-      window.location.reload() // Force reload to reset application state
-    })
-
-    setSocket(newSocket)
-
-    // Load initial data from API immediately
-    loadDataFromAPI(controller.signal)
+    
+    setSocket(mockSocket)
 
     return () => {
-      controller.abort()
-      clearTimeout(connectionTimeout)
-      clearInterval(fallbackInterval)
-      clearInterval(activityInterval)
-      newSocket.close()
+      supabase.removeChannel(newChannel)
+      setSocket(null)
     }
-  }, []) // Empty dependency array = create socket ONLY ONCE
+  }, []) // Empty dependency array to run once on mount
 
-  // Separate effect to handle user identification when props change
+  // Effect to update presence when user info changes
   useEffect(() => {
-    if (!socket || !socket.connected) return
-
-    // Identify user for ALL user types (worker, admin)
-    // This ensures the backend knows the name/lastname of the connected socket
-    // enabling them to appear in the "Connected Users" list immediately.
-    socket.emit('identify-user', { 
-      userType,
-      name: userInfo?.name,
-      lastName: userInfo?.lastName
-    })
-
-    // If we are privileged users, we also want to fetch the list to see others
-    if (userType === 'admin' || userType === 'worker') {
-      socket.emit('request-user-list')
+    if (channel && isConnected && userInfo) {
+       // Update presence track with new info
+       const sessionId = socket?.id || 'unknown'
+       channel.track({
+        socketId: sessionId,
+        userType,
+        name: userInfo.name,
+        lastName: userInfo.lastName,
+        connectedAt: new Date().toISOString(),
+        lastActivity: new Date().toISOString()
+      })
     }
-
-  }, [socket, userType, userInfo?.name, userInfo?.lastName, isConnected])
+  }, [userType, userInfo?.name, userInfo?.lastName, isConnected, channel])
 
   const updateData = useCallback((type: 'products' | 'settings', newData: any) => {
     setData(prevData => ({
