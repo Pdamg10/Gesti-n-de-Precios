@@ -95,8 +95,8 @@ const MobileProductCard = memo(function MobileProductCard({
             </button>
           </div>
         ) : (
-          <span className="inline-block px-2 py-0.5 rounded bg-amber-500 text-black font-black text-[10px] uppercase tracking-wide">
-             Lectura
+          <span className="inline-block px-3 py-1 rounded-lg bg-zinc-800/80 text-gray-300 border border-white/10 font-bold text-xs uppercase tracking-widest shadow-lg">
+             Solo Lectura
           </span>
         )}
       </div>

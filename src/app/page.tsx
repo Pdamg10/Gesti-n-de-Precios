@@ -1091,9 +1091,9 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
     <div className="min-h-screen gradient-bg text-white p-4 md:p-6">
       {/* Header */}
       <header className="text-center mb-8 pt-4">
-        <div className="flex items-center justify-center gap-2 mb-2 scale-110 md:scale-125 transition-transform">
-          <h1 className="text-4xl md:text-6xl font-black tracking-tighter text-white drop-shadow-[0_2px_0_rgba(255,0,0,0.8)] flex items-center gap-1" 
-              style={{ textShadow: '2px 2px 0 #dc2626, -1px -1px 0 #dc2626, 1px -1px 0 #dc2626, -1px 1px 0 #dc2626, 1px 1px 0 #dc2626' }}>
+        <div className="flex items-center justify-center gap-2 mb-2 scale-100 transition-transform">
+          <h1 className="text-4xl md:text-6xl font-black tracking-tighter text-[#dc2626] drop-shadow-[0_2px_0_rgba(255,255,255,0.5)] flex items-center gap-1" 
+              style={{ textShadow: '2px 2px 0 #ffffff, -1px -1px 0 #ffffff, 1px -1px 0 #ffffff, -1px 1px 0 #ffffff, 1px 1px 0 #ffffff' }}>
             GRUP
             <svg className="w-8 h-8 md:w-12 md:h-12 inline-block drop-shadow-lg animate-spin-slow text-white" viewBox="0 0 100 100" aria-label="O - Neumático">
               <circle cx="50" cy="50" r="45" fill="#1a1a1a" stroke="currentColor" strokeWidth="4"></circle>
@@ -1103,22 +1103,22 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
               <path d="M18 18 L29 29 M71 71 L82 82 M18 82 L29 71 M71 29 L82 18" stroke="currentColor" strokeWidth="4"></path>
             </svg>
           </h1>
-          <h1 className="text-4xl md:text-6xl font-black tracking-tighter text-white drop-shadow-[0_2px_0_rgba(255,0,0,0.8)]"
-              style={{ textShadow: '2px 2px 0 #dc2626, -1px -1px 0 #dc2626, 1px -1px 0 #dc2626, -1px 1px 0 #dc2626, 1px 1px 0 #dc2626' }}>
+          <h1 className="text-4xl md:text-6xl font-black tracking-tighter text-[#dc2626] drop-shadow-[0_2px_0_rgba(255,255,255,0.5)]"
+              style={{ textShadow: '2px 2px 0 #ffffff, -1px -1px 0 #ffffff, 1px -1px 0 #ffffff, -1px 1px 0 #ffffff, 1px 1px 0 #ffffff' }}>
             CHIRICA
           </h1>
         </div>
-        <p className="text-gray-400 font-medium tracking-wide uppercase text-xs md:text-sm bg-black/30 inline-block px-4 py-1 rounded-full backdrop-blur-sm border border-white/5">
+        <p className="text-white font-bold tracking-wide uppercase text-xs md:text-sm bg-black/50 inline-block px-4 py-1 rounded-full backdrop-blur-sm border border-white/20 shadow-lg">
           Sistema de Gestión y Control
         </p>
         
         {/* Tabs */}
-        <div className="flex justify-center gap-3 mt-8 flex-wrap">
+        <div className="flex justify-center gap-3 mt-8 flex-wrap items-center">
           <button
             onClick={() => setActiveTab('cauchos')}
-            className={`px-6 py-2.5 rounded-lg font-bold tracking-wide uppercase transition-all shadow-lg ${
+            className={`h-12 px-6 rounded-lg font-bold tracking-wide uppercase transition-all shadow-lg flex items-center justify-center min-w-[140px] ${
               activeTab === 'cauchos' 
-                ? 'bg-red-600 text-white border border-red-500 shadow-red-900/50 scale-105' 
+                ? 'bg-red-600 text-white border border-red-500 shadow-red-900/50 scale-[1.02]' 
                 : 'bg-black/40 text-gray-300 hover:bg-white/10 hover:text-white border border-white/5'
             }`}
           >
@@ -1126,9 +1126,9 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
           </button>
           <button
             onClick={() => setActiveTab('baterias')}
-            className={`px-6 py-2.5 rounded-lg font-bold tracking-wide uppercase transition-all shadow-lg ${
+            className={`h-12 px-6 rounded-lg font-bold tracking-wide uppercase transition-all shadow-lg flex items-center justify-center min-w-[140px] ${
               activeTab === 'baterias' 
-                ? 'bg-red-600 text-white border border-red-500 shadow-red-900/50 scale-105' 
+                ? 'bg-red-600 text-white border border-red-500 shadow-red-900/50 scale-[1.02]' 
                 : 'bg-black/40 text-gray-300 hover:bg-white/10 hover:text-white border border-white/5'
             }`}
           >
@@ -1138,9 +1138,9 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
             <>
               <button
                 onClick={() => setShowAddListModal(true)}
-                className="px-6 py-2 rounded-lg font-medium transition-all bg-green-600/20 text-green-400 hover:bg-green-600/40 border-2 border-green-600/50 border-dashed"
+                className="h-12 px-6 rounded-lg font-bold tracking-wide uppercase transition-all shadow-lg flex items-center justify-center min-w-[140px] bg-green-600/20 text-green-400 hover:bg-green-600/40 border-2 border-green-600/50 border-dashed hover:text-white"
               >
-                ➕ Agregar Lista
+                ➕ Agregar
               </button>
               <button
                 onClick={async () => {
@@ -1153,9 +1153,9 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
                      await deleteCustomList(activeTab)
                   }
                 }}
-                className="px-6 py-2 rounded-lg font-medium transition-all bg-red-600/20 text-red-400 hover:bg-red-600/40 border-2 border-red-600/50 border-dashed"
+                className="h-12 px-6 rounded-lg font-bold tracking-wide uppercase transition-all shadow-lg flex items-center justify-center min-w-[140px] bg-red-600/20 text-red-400 hover:bg-red-600/40 border-2 border-red-600/50 border-dashed hover:text-white"
               >
-                ➖ Quitar Lista
+                ➖ Quitar
               </button>
             </>
           )}
@@ -1194,11 +1194,11 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
             className="w-full card-glass rounded-xl p-4 flex items-center justify-between hover:bg-white/10 transition-all font-semibold"
           >
             <div className="flex items-center gap-2">
-              <svg className="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
-              <span className="text-red-500">
+              <span className="text-white">
                 {isSuperAdmin ? 'Panel de Administración' : 'Panel de Usuarios Conectados'}
               </span>
             </div>
@@ -1217,7 +1217,7 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
               
               {isAdmin && (
                 <>
-                  <h2 className="text-lg font-semibold text-red-500 mb-4 mt-8 border-t border-white/10 pt-6">Configuración Global</h2>
+                  <h2 className="text-lg font-semibold text-white mb-4 mt-8 border-t border-white/10 pt-6">Configuración Global</h2>
               
               {/* Tax & Exchange Config */}
               <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1234,7 +1234,7 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
                       max="100"
                       step="0.1"
                     />
-                    <span className="text-red-500 font-bold">{taxRate}%</span>
+                    <span className="text-white font-bold">{taxRate}%</span>
                   </div>
                 </div>
 
@@ -1306,11 +1306,11 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                     </svg>
-                    <h3 className="text-sm font-bold text-red-500">Ajustes de Precios Base (aplicar a todos los productos)</h3>
+                    <h3 className="text-sm font-bold text-white">Ajustes de Precios Base (aplicar a todos los productos)</h3>
                   </div>
                   <button
                     onClick={() => setTempGlobalDiscounts({ bs: 0, usd: 0 })}
-                    className="text-xs text-orange-500 hover:text-orange-400 flex items-center gap-1 font-medium transition-colors"
+                    className="text-xs text-white hover:text-gray-300 flex items-center gap-1 font-medium transition-colors"
                     title="Restablecer ajustes de precio base a 0"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1379,7 +1379,7 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
                   >
                     Aplicar Ambos Ajustes de Precio Base
                   </button>
-                  <div className="flex items-center justify-center gap-2 mt-3 text-xs text-red-500">
+                  <div className="flex items-center justify-center gap-2 mt-3 text-xs text-white">
                     <span className="text-lg">⚠️</span>
                     <p>Esta acción modificará permanentemente los precios base de todos los productos en esta lista</p>
                   </div>
@@ -1393,7 +1393,7 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
                   <div className="flex gap-3">
                     <button
                         onClick={resetAllDiscounts}
-                        className="text-xs text-orange-500 hover:text-orange-400 flex items-center gap-1 font-medium transition-colors"
+                        className="text-xs text-white hover:text-gray-300 flex items-center gap-1 font-medium transition-colors"
                         title="Poner todos los descuentos en 0%"
                     >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1403,7 +1403,7 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
                     </button>
                     <button 
                       onClick={() => setIsManagingColumns(!isManagingColumns)}
-                      className="text-xs text-red-500 hover:text-red-400 flex items-center gap-1 font-medium transition-colors"
+                      className="text-xs text-white hover:text-gray-300 flex items-center gap-1 font-medium transition-colors"
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -1416,7 +1416,7 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
 
                 {isManagingColumns && (
                   <div className="card-glass rounded-lg p-4 mb-4 border border-red-500/30">
-                    <h4 className="text-sm font-semibold text-red-500 mb-3">Gestionar Tipos de Precio</h4>
+                    <h4 className="text-sm font-semibold text-white mb-3">Gestionar Tipos de Precio</h4>
                     
                     <div className="flex gap-2 mb-4 items-center">
                       <input
@@ -1564,10 +1564,10 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
             className="w-full card-glass rounded-xl p-4 flex items-center justify-between hover:bg-white/10 transition-all"
           >
             <div className="flex items-center gap-2">
-              <svg className="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
               </svg>
-              <span className="text-lg font-semibold text-red-500">
+              <span className="text-lg font-semibold text-white">
                 Agregar Nuevo {activeTab === 'cauchos' ? 'Caucho' : 'Batería'}
               </span>
             </div>
@@ -1578,7 +1578,7 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
 
           {showAddPanel && (
             <div className="card-glass rounded-2xl p-4 md:p-6 mt-4">
-              <h2 className="text-lg font-semibold text-red-500 mb-4">Agregar Nuevo Producto</h2>
+              <h2 className="text-lg font-semibold text-white mb-4">Agregar Nuevo Producto</h2>
               
               <div className="mb-4 flex gap-2 flex-wrap">
                 <ExcelImport onImport={importProducts} />
@@ -1674,7 +1674,7 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
       {/* Product List */}
       <div className="card-glass rounded-2xl p-4 md:p-6">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold text-red-500 flex items-center gap-2">
+          <h2 className="text-lg font-semibold text-white flex items-center gap-2">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
             </svg>
@@ -1738,7 +1738,7 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
               <tr className="border-b border-white/10 text-left">
                   <th className="pb-3 text-sm font-medium text-gray-400">Descripcion</th>
                   {priceColumns.map((col) => (
-                    <th key={col.key} className="pb-3 text-sm font-medium text-red-500 text-right">{col.label}</th>
+                    <th key={col.key} className="pb-3 text-sm font-medium text-white text-right">{col.label}</th>
                   ))}
                   <th className="pb-3 text-sm font-medium text-gray-400 text-right">Lista (Bs)</th>
                   <th className="pb-3 text-sm font-medium text-gray-400 text-right">Lista ($)</th>
@@ -1788,7 +1788,7 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
       {showEditModal && selectedProduct && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="card-glass rounded-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <h3 className="text-xl font-semibold text-red-500 mb-4">Editar Producto</h3>
+            <h3 className="text-xl font-semibold text-white mb-4">Editar Producto</h3>
             <form onSubmit={(e) => { e.preventDefault(); updateProduct(); }}>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
                 <div>
@@ -1904,7 +1904,7 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
       {editingColumn && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="card-glass rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-white/20 animate-in fade-in zoom-in duration-200">
-            <h3 className="text-xl font-semibold text-red-500 mb-2">Editar Columna</h3>
+            <h3 className="text-xl font-semibold text-white mb-2">Editar Columna</h3>
             <p className="text-gray-200 mb-6 leading-relaxed">Modifica el nombre y la moneda base:</p>
             
             <div className="space-y-4 mb-6">

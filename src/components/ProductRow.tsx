@@ -132,7 +132,7 @@ const ProductRow = memo(function ProductRow({
               </button>
             </>
           ) : (
-            <span className="inline-block px-3 py-1.5 rounded-lg bg-amber-500 text-black font-black text-xs uppercase tracking-widest shadow-lg shadow-amber-500/20">
+            <span className="inline-block px-4 py-2 rounded-lg bg-zinc-800/80 text-gray-300 border border-white/10 font-bold text-sm uppercase tracking-widest shadow-lg transform hover:scale-105 transition-transform cursor-default">
               Solo Lectura
             </span>
           )}
