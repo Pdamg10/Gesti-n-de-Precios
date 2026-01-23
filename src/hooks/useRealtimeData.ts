@@ -59,27 +59,52 @@ export function useRealtimeData(userType: 'admin' | 'worker' = 'worker', userInf
 
     // Function to load data from API (fallback mode)
     const loadDataFromAPI = async (signal?: AbortSignal) => {
+      if (signal?.aborted) return
+
       try {
-        console.log('Loading data from API (fallback mode)...')
+        // Wrapper to silence AbortErrors at the source
+        const safeFetch = async (url: string) => {
+          try {
+            const res = await fetch(url, { signal })
+            return res
+          } catch (err: any) {
+            if (err.name === 'AbortError' || signal?.aborted) return null
+            throw err
+          }
+        }
+
         const [productsRes, settingsRes] = await Promise.all([
-          fetch('/api/products', { signal }),
-          fetch('/api/settings', { signal })
+          safeFetch('/api/products'),
+          safeFetch('/api/settings')
         ])
         
-        if (productsRes.ok && settingsRes.ok) {
+        if (signal?.aborted) return
+        
+        if (productsRes?.ok && settingsRes?.ok) {
           const [products, settings] = await Promise.all([
             productsRes.json(),
             settingsRes.json()
           ])
           
-          setData({ products, settings })
-          console.log('Data loaded from API successfully')
+          if (!signal?.aborted) {
+            setData({ products, settings })
+          }
         }
       } catch (error: any) {
-        if (error.name === 'AbortError' || signal?.aborted) {
-          console.log('Fetch aborted')
+        // Final safety check
+        if (signal?.aborted) return
+
+        // Enhanced error suppression
+        if (
+          error.name === 'AbortError' || 
+          error.message?.includes('aborted') || 
+          error.name === 'TypeError' ||
+          error.message === 'Failed to fetch' ||
+          error.message?.includes('net::ERR_ABORTED')
+        ) {
           return
         }
+        
         console.error('Error loading data from API:', error)
       }
     }

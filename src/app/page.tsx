@@ -75,6 +75,9 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState('cauchos')
   const [customLists, setCustomLists] = useState<CustomList[]>([])
   const [taxRate, setTaxRate] = useState(16)
+  const [exchangeRate, setExchangeRate] = useState(60) // Default exchange rate
+  const [viewCurrency, setViewCurrency] = useState<'bs' | 'usd'>('bs') // Global view preference
+
   const [globalAdjustments, setGlobalAdjustments] = useState<Record<string, any>>({
     cauchos: { cashea: 0, transferencia: 0, divisas: 0, custom: 0 },
     baterias: { cashea: 0, transferencia: 0, divisas: 0, custom: 0 }
@@ -83,14 +86,16 @@ export default function Home() {
     cauchos: { cashea: '', transferencia: '', divisas: '', custom: '', pagoMovil: '' },
     baterias: { cashea: '', transferencia: '', divisas: '', custom: '', pagoMovil: '' }
   })
-  const [priceColumns, setPriceColumns] = useState<{ key: string, label: string }[]>([
-    { key: 'cashea', label: 'Cashea ($)' },
-    { key: 'transferencia', label: 'Transferencia ($)' },
-    { key: 'divisas', label: 'Divisas ($)' },
-    { key: 'custom', label: 'Divisas en Fisico' },
-    { key: 'pagoMovil', label: 'Pago Móvil ($)' }
+  const [priceColumns, setPriceColumns] = useState<{ key: string, label: string, base: 'bs' | 'usd' }[]>([
+    { key: 'cashea', label: 'Cashea (Bs)', base: 'bs' },
+    { key: 'transferencia', label: 'Transferencia (Bs)', base: 'bs' },
+    { key: 'divisas', label: 'Divisas ($)', base: 'usd' },
+    { key: 'custom', label: 'Divisas en Fisico', base: 'usd' },
+    { key: 'pagoMovil', label: 'Pago Móvil (Bs)', base: 'bs' }
   ])
   const [newColumnName, setNewColumnName] = useState('')
+  const [newColumnBase, setNewColumnBase] = useState<'bs' | 'usd'>('bs')
+  const [editingColumn, setEditingColumn] = useState<{ key: string, label: string, base: 'bs' | 'usd' } | null>(null)
   const [isManagingColumns, setIsManagingColumns] = useState(false)
   const [defaultAdjustments, setDefaultAdjustments] = useState<Record<string, any>>({
     cauchos: { cashea: 0, transferencia: 0, divisas: 0, custom: 0, pagoMovil: 0 },
@@ -173,11 +178,29 @@ export default function Home() {
 
   // Check for saved auth on mount is handled in the useEffect below
 
+  // Load view preference on mount
+  useEffect(() => {
+    const savedCurrency = sessionStorage.getItem('viewCurrency') as 'bs' | 'usd'
+    if (savedCurrency) setViewCurrency(savedCurrency)
+  }, [])
+
+  // Save view preference
+  const toggleViewCurrency = (currency: 'bs' | 'usd') => {
+    setViewCurrency(currency)
+    sessionStorage.setItem('viewCurrency', currency)
+  }
+
   const loadSettingsFromData = (settingsData: Setting[]) => {
     // Load tax rate
     const taxSetting = settingsData.find(s => s.settingKey === 'tax_rate')
     if (taxSetting && taxSetting.taxRate !== undefined) {
       setTaxRate(taxSetting.taxRate)
+    }
+
+    // Load exchange rate
+    const exchangeSetting = settingsData.find(s => s.settingKey === 'exchange_rate')
+    if (exchangeSetting && exchangeSetting.settingValue) {
+      setExchangeRate(parseFloat(exchangeSetting.settingValue) || 60)
     }
 
     // Load custom lists
@@ -229,7 +252,16 @@ export default function Home() {
     const priceColsSetting = settingsData.find(s => s.settingKey === 'price_columns')
     if (priceColsSetting && priceColsSetting.settingValue) {
       try {
-        setPriceColumns(JSON.parse(priceColsSetting.settingValue))
+        let cols = JSON.parse(priceColsSetting.settingValue)
+        // Auto-update legacy labels to new standard and FORCE correct base currency
+        cols = cols.map((c: any) => {
+           if (c.key === 'cashea') return { ...c, label: 'Cashea (Bs)', base: 'bs' }
+           if (c.key === 'transferencia') return { ...c, label: 'Transferencia (Bs)', base: 'bs' }
+           if (c.key === 'pagoMovil') return { ...c, label: 'Pago Móvil (Bs)', base: 'bs' }
+           if (c.key === 'divisas') return { ...c, label: 'Divisas ($)', base: 'usd' }
+           return c
+        })
+        setPriceColumns(cols)
       } catch (e) {
         console.error('Error parsing price columns', e)
       }
@@ -285,18 +317,23 @@ export default function Home() {
 
   const saveTaxRate = async () => {
     try {
-      const response = await fetch(`/api/settings/tax_rate`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ taxRate })
-      })
+      await Promise.all([
+        fetch(`/api/settings/tax_rate`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ taxRate })
+        }),
+        fetch(`/api/settings/exchange_rate`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ settingValue: exchangeRate.toString() })
+        })
+      ])
       
-      if (response.ok) {
-        alert('Impuesto actualizado correctamente')
-      }
+      showAlert('Configuración actualizada correctamente', 'Éxito')
     } catch (error) {
-      console.error('Error saving tax rate:', error)
-      showAlert('Error al guardar el impuesto', 'Error')
+      console.error('Error saving settings:', error)
+      showAlert('Error al guardar la configuración', 'Error')
     }
   }
 
@@ -353,6 +390,47 @@ export default function Home() {
     } catch (error) {
       console.error('Error saving adjustment:', error)
       showAlert('Error al guardar los ajustes', 'Error')
+    }
+  }
+
+  const resetAllDiscounts = async () => {
+    if (!await showConfirm('¿Estás seguro de resetear todos los descuentos a 0%? Esto afectará a todos los productos de esta lista.', 'Confirmar Reset')) return
+
+    try {
+        const currentDefaults = defaultAdjustments[activeTab] || {}
+        const newDefaults: Record<string, number> = {}
+        
+        // Set all keys to 0
+        Object.keys(currentDefaults).forEach(key => {
+            newDefaults[key] = 0
+        })
+
+        // Save new defaults
+        await fetch(`/api/settings/default_adj_${activeTab}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ settingValue: JSON.stringify(newDefaults) })
+        })
+
+        // Clear local adjustments state
+        const newLocals = { ...localAdjustments }
+        if (newLocals[activeTab]) {
+            Object.keys(newLocals[activeTab]).forEach(key => {
+                newLocals[activeTab][key] = ''
+            })
+        }
+        setLocalAdjustments(newLocals)
+        
+        // Update defaults state
+        const newDefaultState = { ...defaultAdjustments }
+        newDefaultState[activeTab] = newDefaults
+        setDefaultAdjustments(newDefaultState)
+        
+        refreshData()
+        showAlert('Todos los descuentos han sido reseteados a 0%', 'Éxito')
+    } catch (error) {
+        console.error('Error resetting discounts:', error)
+        showAlert('Error al resetear descuentos', 'Error')
     }
   }
 
@@ -487,17 +565,25 @@ export default function Home() {
     if (!selectedProduct) return
 
     try {
+      const payload: any = {
+        type: editForm.type,
+        medida: editForm.medida,
+        precioListaBs: editForm.precioListaBs,
+        precioListaUsd: editForm.precioListaUsd,
+      }
+
+      // Process all dynamic adjustments
+      priceColumns.forEach(col => {
+        const key = `adjustment${col.key.charAt(0).toUpperCase() + col.key.slice(1)}`
+        const val = (editForm as any)[key]
+        // Convert to float or null
+        payload[key] = (val && val !== '') ? parseFloat(val) : null
+      })
+
       const response = await fetch(`/api/products/${selectedProduct.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...editForm,
-          adjustmentCashea: editForm.adjustmentCashea ? parseFloat(editForm.adjustmentCashea) : null,
-          adjustmentTransferencia: editForm.adjustmentTransferencia ? parseFloat(editForm.adjustmentTransferencia) : null,
-          adjustmentDivisas: editForm.adjustmentDivisas ? parseFloat(editForm.adjustmentDivisas) : null,
-          adjustmentCustom: editForm.adjustmentCustom ? parseFloat(editForm.adjustmentCustom) : null,
-          adjustmentPagoMovil: (editForm as any).adjustmentPagoMovil ? parseFloat((editForm as any).adjustmentPagoMovil) : null,
-        })
+        body: JSON.stringify(payload)
       })
 
       if (response.ok) {
@@ -675,9 +761,9 @@ export default function Home() {
     }
   }
 
-  const calculatePrice = (basePrice: number, adjustment: number) => {
-    // Aplicar impuesto primero
-    const priceWithTax = basePrice * (1 + taxRate / 100)
+  const calculatePrice = (basePrice: number, adjustment: number, currency: 'bs' | 'usd' = 'bs') => {
+    // Aplicar impuesto solo si es Bs
+    const priceWithTax = currency === 'bs' ? basePrice * (1 + taxRate / 100) : basePrice
     // Luego aplicar ajuste (descuento o incremento)
     const finalPrice = priceWithTax * (1 + adjustment / 100)
     return finalPrice
@@ -700,11 +786,11 @@ export default function Home() {
   const calculateAllPrices = (product: Product) => {
     const prices: Record<string, { base: number; final: number; adjustment: number }> = {}
     
-    const types = ['cashea', 'transferencia', 'divisas', 'custom']
-    types.forEach(type => {
-      const basePrice = (type === 'divisas' || type === 'custom') ? product.precioListaUsd : product.precioListaBs
+    priceColumns.forEach(col => {
+      const type = col.key
+      const basePrice = col.base === 'usd' ? product.precioListaUsd : product.precioListaBs
       const adjustment = getEffectiveAdjustment(product, type)
-      const finalPrice = calculatePrice(basePrice, adjustment)
+      const finalPrice = calculatePrice(basePrice, adjustment, col.base || 'usd')
       
       prices[type] = {
         base: basePrice,
@@ -747,7 +833,7 @@ export default function Home() {
     if (!newColumnName.trim()) return
     
     const key = newColumnName.toLowerCase().replace(/[^a-z0-9]/g, '') + Date.now().toString().slice(-4)
-    const newCol = { key, label: newColumnName }
+    const newCol = { key, label: newColumnName, base: newColumnBase }
     const newColumns = [...priceColumns, newCol]
     
     try {
@@ -759,6 +845,7 @@ export default function Home() {
       
       setPriceColumns(newColumns)
       setNewColumnName('')
+      setNewColumnBase('bs') // Reset to default
       setIsManagingColumns(false)
       
       // Initialize adjustments for new column
@@ -833,11 +920,11 @@ export default function Home() {
     }
   }
 
-  const editPriceColumn = async (key: string, newLabel: string) => {
+  const editPriceColumn = async (key: string, newLabel: string, newBase: 'bs' | 'usd') => {
     if (!newLabel.trim()) return
     
     const newColumns = priceColumns.map(col => 
-      col.key === key ? { ...col, label: newLabel } : col
+      col.key === key ? { ...col, label: newLabel, base: newBase } : col
     )
     
     try {
@@ -848,7 +935,7 @@ export default function Home() {
       })
       
       setPriceColumns(newColumns)
-      showAlert('Nombre de columna actualizado correctamente', 'Éxito')
+      showAlert('Columna actualizada correctamente', 'Éxito')
     } catch (error) {
       console.error('Error updating column:', error)
       showAlert('Error al actualizar columna', 'Error')
@@ -876,8 +963,10 @@ export default function Home() {
   const getDisplayedPrice = (product: Product, currency: 'bs' | 'usd') => {
     const basePrice = currency === 'bs' ? product.precioListaBs : product.precioListaUsd
     const discount = tempGlobalDiscounts[currency]
-    if (discount === 0) return basePrice
-    return roundToNearest5(basePrice * (1 + discount / 100))
+    if (discount === 0) return Math.max(0, basePrice)
+    const newPrice = basePrice * (1 + discount / 100)
+    // Asegurar que el precio no sea negativo
+    return Math.max(0, roundToNearest5(newPrice))
   }
 
   // Commit temp discounts to DB permanently
@@ -912,7 +1001,9 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
     
     for (const product of productsToUpdate) {
       const currentPrice = currency === 'bs' ? product.precioListaBs : product.precioListaUsd
-      const newPrice = roundToNearest5(currentPrice * multiplier)
+      // Aplicar multiplicador y asegurar que no sea negativo
+      const newPriceRaw = currentPrice * multiplier
+      const newPrice = Math.max(0, roundToNearest5(newPriceRaw))
       
       try {
         const updateData = currency === 'bs' 
@@ -998,65 +1089,47 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
 
   return (
     <div className="min-h-screen gradient-bg text-white p-4 md:p-6">
-      <style jsx>{`
-        .gradient-bg {
-          background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-        }
-        .card-glass {
-          background: rgba(255, 255, 255, 0.05);
-          backdrop-filter: blur(10px);
-          border: 1px solid rgba(255, 255, 255, 0.1);
-        }
-        .input-dark {
-          background: rgba(0, 0, 0, 0.3);
-          border: 1px solid rgba(255, 255, 255, 0.2);
-        }
-        .input-dark:focus {
-          border-color: #f59e0b;
-          outline: none;
-          box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
-        }
-        .btn-primary {
-          background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-        }
-        .btn-primary:hover {
-          background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
-        }
-        .btn-danger {
-          background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-        }
-        .btn-danger:hover {
-          background: linear-gradient(135deg, #f87171 0%, #ef4444 100%);
-        }
-        .price-up { color: #22c55e; }
-        .price-down { color: #ef4444; }
-      `}</style>
-
       {/* Header */}
-      <header className="text-center mb-6">
-        <h1 className="text-3xl md:text-4xl font-bold bg-linear-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent">
-          Gestión de Precios
-        </h1>
-        <p className="text-gray-400 mt-2">Sistema de control de precios con impuestos y ajustes</p>
+      <header className="text-center mb-8 pt-4">
+        <div className="flex items-center justify-center gap-2 mb-2 scale-110 md:scale-125 transition-transform">
+          <h1 className="text-4xl md:text-6xl font-black tracking-tighter text-red-600 drop-shadow-[0_2px_0_rgba(255,255,255,0.8)] flex items-center gap-1" 
+              style={{ textShadow: '2px 2px 0 #fff, -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff' }}>
+            GRUP
+            <svg className="w-8 h-8 md:w-12 md:h-12 inline-block drop-shadow-lg animate-spin-slow text-white" viewBox="0 0 100 100" aria-label="O - Neumático">
+              <circle cx="50" cy="50" r="45" fill="#1a1a1a" stroke="currentColor" strokeWidth="4"></circle>
+              <circle cx="50" cy="50" r="30" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="5,5"></circle>
+              <circle cx="50" cy="50" r="15" fill="#333" stroke="currentColor" strokeWidth="2"></circle>
+              <path d="M50 5 L50 20 M50 80 L50 95 M5 50 L20 50 M80 50 L95 50" stroke="currentColor" strokeWidth="4"></path>
+              <path d="M18 18 L29 29 M71 71 L82 82 M18 82 L29 71 M71 29 L82 18" stroke="currentColor" strokeWidth="4"></path>
+            </svg>
+          </h1>
+          <h1 className="text-4xl md:text-6xl font-black tracking-tighter text-red-600 drop-shadow-[0_2px_0_rgba(255,255,255,0.8)]"
+              style={{ textShadow: '2px 2px 0 #fff, -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff' }}>
+            CHIRICA
+          </h1>
+        </div>
+        <p className="text-gray-400 font-medium tracking-wide uppercase text-xs md:text-sm bg-black/30 inline-block px-4 py-1 rounded-full backdrop-blur-sm border border-white/5">
+          Sistema de Gestión y Control
+        </p>
         
         {/* Tabs */}
-        <div className="flex justify-center gap-2 mt-4 flex-wrap">
+        <div className="flex justify-center gap-3 mt-8 flex-wrap">
           <button
             onClick={() => setActiveTab('cauchos')}
-            className={`px-6 py-2 rounded-lg font-medium transition-all ${
+            className={`px-6 py-2.5 rounded-lg font-bold tracking-wide uppercase transition-all shadow-lg ${
               activeTab === 'cauchos' 
-                ? 'bg-amber-600 text-gray-900' 
-                : 'bg-white/10 text-white hover:bg-white/20'
+                ? 'bg-red-600 text-white border border-red-500 shadow-red-900/50 scale-105' 
+                : 'bg-black/40 text-gray-300 hover:bg-white/10 hover:text-white border border-white/5'
             }`}
           >
             🚗 Cauchos
           </button>
           <button
             onClick={() => setActiveTab('baterias')}
-            className={`px-6 py-2 rounded-lg font-medium transition-all ${
+            className={`px-6 py-2.5 rounded-lg font-bold tracking-wide uppercase transition-all shadow-lg ${
               activeTab === 'baterias' 
-                ? 'bg-amber-600 text-gray-900' 
-                : 'bg-white/10 text-white hover:bg-white/20'
+                ? 'bg-red-600 text-white border border-red-500 shadow-red-900/50 scale-105' 
+                : 'bg-black/40 text-gray-300 hover:bg-white/10 hover:text-white border border-white/5'
             }`}
           >
             🔋 Baterías
@@ -1121,11 +1194,11 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
             className="w-full card-glass rounded-xl p-4 flex items-center justify-between hover:bg-white/10 transition-all font-semibold"
           >
             <div className="flex items-center gap-2">
-              <svg className="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
-              <span className="text-amber-400">
+              <span className="text-red-500">
                 {isSuperAdmin ? 'Panel de Administración' : 'Panel de Usuarios Conectados'}
               </span>
             </div>
@@ -1144,41 +1217,56 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
               
               {isAdmin && (
                 <>
-                  <h2 className="text-lg font-semibold text-amber-400 mb-4 mt-8 border-t border-white/10 pt-6">Configuración Global</h2>
+                  <h2 className="text-lg font-semibold text-red-500 mb-4 mt-8 border-t border-white/10 pt-6">Configuración Global</h2>
               
-              {/* Tax Config */}
-              <div className="mb-6">
-                <label className="block text-sm text-gray-400 mb-2">Impuesto (%)</label>
-                <div className="flex gap-2">
-                  <input
-                    type="number"
-                    value={taxRate}
-                    onChange={(e) => setTaxRate(Math.max(0, Math.min(100, parseFloat(e.target.value) || 0)))}
-                    className="input-dark rounded-lg px-3 py-2 w-32 text-white"
-                    min="0"
-                    max="100"
-                    step="0.1"
-                  />
+              {/* Tax & Exchange Config */}
+              <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">Impuesto (%)</label>
+                  <div className="flex gap-2 items-center">
+                    <input
+                      type="number"
+                      value={taxRate}
+                      onChange={(e) => setTaxRate(Math.max(0, Math.min(100, parseFloat(e.target.value) || 0)))}
+                      className="input-dark rounded-lg px-3 py-2 w-full text-white"
+                      min="0"
+                      max="100"
+                      step="0.1"
+                    />
+                    <span className="text-red-500 font-bold">{taxRate}%</span>
+                  </div>
+                </div>
+
+                <div className="md:col-span-2">
                   <button
                     onClick={saveTaxRate}
-                    className="btn-primary px-4 py-2 rounded-lg font-medium text-gray-900 transition-all shadow-lg hover:shadow-amber-500/20"
+                    className="w-full btn-primary px-4 py-2 rounded-lg font-medium text-white transition-all shadow-lg hover:shadow-red-500/20"
                   >
-                    Guardar
+                    Guardar Configuración
                   </button>
-                  <span className="flex items-center text-xs text-gray-500 ml-2">
-                    Impuesto actual: <span className="text-amber-400 ml-1">{taxRate}%</span>
-                  </span>
                 </div>
               </div>
 
               {/* Base Price Adjustments */}
               <div className="mb-6 border-t border-white/10 pt-4">
-                <div className="flex items-center gap-2 mb-4">
-                  <svg className="w-5 h-5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-                  <h3 className="text-sm font-bold text-amber-400">Ajustes de Precios Base (aplicar a todos los productos)</h3>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <svg className="w-5 h-5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    <h3 className="text-sm font-bold text-red-500">Ajustes de Precios Base (aplicar a todos los productos)</h3>
+                  </div>
+                  <button
+                    onClick={() => setTempGlobalDiscounts({ bs: 0, usd: 0 })}
+                    className="text-xs text-orange-500 hover:text-orange-400 flex items-center gap-1 font-medium transition-colors"
+                    title="Restablecer ajustes de precio base a 0"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Restablecer
+                  </button>
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1199,7 +1287,7 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
                     
                     <button 
                       onClick={() => applyBasePriceAdjustment('bs')}
-                      className="w-full btn-primary py-2.5 rounded-lg font-bold text-gray-900 shadow-lg hover:shadow-amber-500/20 transition-all mb-2"
+                      className="w-full btn-primary py-2.5 rounded-lg font-bold text-white shadow-lg hover:shadow-red-500/20 transition-all mb-2"
                     >
                       Aplicar Ajuste a Lista (Bs) {tempGlobalDiscounts.bs !== 0 && `(${tempGlobalDiscounts.bs > 0 ? '+' : ''}${tempGlobalDiscounts.bs}%)`}
                     </button>
@@ -1224,7 +1312,7 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
                     
                     <button 
                       onClick={() => applyBasePriceAdjustment('usd')}
-                      className="w-full btn-primary py-2.5 rounded-lg font-bold text-gray-900 shadow-lg hover:shadow-amber-500/20 transition-all mb-2"
+                      className="w-full btn-primary py-2.5 rounded-lg font-bold text-white shadow-lg hover:shadow-red-500/20 transition-all mb-2"
                     >
                       Aplicar Ajuste a Lista ($) {tempGlobalDiscounts.usd !== 0 && `(${tempGlobalDiscounts.usd > 0 ? '+' : ''}${tempGlobalDiscounts.usd}%)`}
                     </button>
@@ -1236,11 +1324,11 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
                 <div className="mt-6 text-center">
                   <button
                     onClick={applyBothBasePriceAdjustments}
-                    className="btn-primary px-8 py-3 rounded-lg font-bold text-gray-900 text-lg transition-all shadow-xl hover:shadow-amber-500/30 hover:scale-[1.02]"
+                    className="btn-primary px-8 py-3 rounded-lg font-bold text-white text-lg transition-all shadow-xl hover:shadow-red-500/30 hover:scale-[1.02]"
                   >
                     Aplicar Ambos Ajustes de Precio Base
                   </button>
-                  <div className="flex items-center justify-center gap-2 mt-3 text-xs text-amber-400">
+                  <div className="flex items-center justify-center gap-2 mt-3 text-xs text-red-500">
                     <span className="text-lg">⚠️</span>
                     <p>Esta acción modificará permanentemente los precios base de todos los productos en esta lista</p>
                   </div>
@@ -1251,34 +1339,54 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
               <div className="border-t border-white/10 pt-4">
                 <div className="flex justify-between items-center mb-3">
                   <h3 className="text-sm font-semibold text-gray-300">Ajustes Globales por Tipo de Precio</h3>
-                  <button 
-                    onClick={() => setIsManagingColumns(!isManagingColumns)}
-                    className="text-xs text-amber-400 hover:text-amber-300 flex items-center gap-1"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                    Gestionar Columnas
-                  </button>
+                  <div className="flex gap-3">
+                    <button
+                        onClick={resetAllDiscounts}
+                        className="text-xs text-orange-500 hover:text-orange-400 flex items-center gap-1 font-medium transition-colors"
+                        title="Poner todos los descuentos en 0%"
+                    >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        Resetear Descuentos
+                    </button>
+                    <button 
+                      onClick={() => setIsManagingColumns(!isManagingColumns)}
+                      className="text-xs text-red-500 hover:text-red-400 flex items-center gap-1 font-medium transition-colors"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                      Gestionar Columnas
+                    </button>
+                  </div>
                 </div>
 
                 {isManagingColumns && (
-                  <div className="card-glass rounded-lg p-4 mb-4 border border-amber-500/30">
-                    <h4 className="text-sm font-semibold text-amber-400 mb-3">Gestionar Tipos de Precio</h4>
+                  <div className="card-glass rounded-lg p-4 mb-4 border border-red-500/30">
+                    <h4 className="text-sm font-semibold text-red-500 mb-3">Gestionar Tipos de Precio</h4>
                     
-                    <div className="flex gap-2 mb-4">
+                    <div className="flex gap-2 mb-4 items-center">
                       <input
                         type="text"
                         value={newColumnName}
                         onChange={(e) => setNewColumnName(e.target.value)}
-                        placeholder="Nombre de nueva columna (ej. Zelle)"
+                        placeholder="Nombre de nueva columna"
                         className="flex-1 input-dark rounded-lg px-3 py-2 text-white text-sm"
                       />
+                      <select 
+                        value={newColumnBase}
+                        onChange={(e) => setNewColumnBase(e.target.value as 'bs' | 'usd')}
+                        className="input-dark rounded-lg px-3 py-2 text-white text-sm"
+                      >
+                        <option value="bs">Base Bs</option>
+                        <option value="usd">Base $</option>
+                      </select>
                       <button
                         onClick={addPriceColumn}
                         disabled={!newColumnName.trim()}
-                        className="btn-primary px-4 py-2 rounded-lg font-medium text-gray-900 text-xs disabled:opacity-50"
+                        className="btn-primary px-4 py-2 rounded-lg font-medium text-white text-xs disabled:opacity-50"
                       >
                         Agregar
                       </button>
@@ -1289,20 +1397,15 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
                         <div key={col.key} className="flex justify-between items-center bg-black/20 p-2 rounded">
                           <div className="flex items-center gap-2 flex-1 min-w-0">
                             <span className="text-sm text-gray-300 truncate" title={col.label}>
-                              {col.label} <span className="text-xs text-gray-500">({col.key})</span>
+                              {col.label} <span className="text-xs text-gray-500">({col.base === 'bs' ? 'Bs' : '$'})</span>
                             </span>
                           </div>
                           
                           <div className="flex gap-2 shrink-0">
                             <button
-                              onClick={async () => {
-                                const newName = await showPrompt('Nuevo nombre para la columna:', col.label)
-                                if (newName && newName !== col.label) {
-                                  editPriceColumn(col.key, newName)
-                                }
-                              }}
+                              onClick={() => setEditingColumn({ key: col.key, label: col.label, base: col.base || 'bs' })}
                               className="text-blue-400 hover:text-blue-300 p-1"
-                              title="Editar nombre"
+                              title="Editar columna"
                             >
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
@@ -1330,14 +1433,14 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
                     const currentGlobal = defaultAdjustments[activeTab]?.[key] || 0
                     
                     return (
-                    <div key={key} className="card-glass rounded-lg p-3">
-                      <div className="flex justify-between items-center mb-1">
-                        <label className="block text-xs text-gray-400">{label}</label>
+                    <div key={key} className="card-glass rounded-lg p-3 flex flex-col justify-between h-full">
+                      <div className="flex justify-between items-center mb-2">
+                        <label className="block text-xs text-gray-400 font-medium truncate pr-2" title={label}>{label}</label>
                         <span className={`text-xs font-bold ${currentGlobal > 0 ? 'text-green-400' : currentGlobal < 0 ? 'text-red-400' : 'text-gray-500'}`}>
                           {currentGlobal > 0 ? '+' : ''}{currentGlobal}%
                         </span>
                       </div>
-                      <div className="flex gap-1 mb-2">
+                      <div className="flex gap-1">
                         <button
                           onClick={() => {
                             const current = Number(localAdjustments[activeTab]?.[key] || 0)
@@ -1345,9 +1448,9 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
                             newAdjustments[activeTab] = { ...newAdjustments[activeTab], [key]: current - 1 }
                             setLocalAdjustments(newAdjustments)
                           }}
-                          className="input-dark px-2 py-1 rounded text-white hover:bg-white/10"
+                          className="w-8 h-8 flex items-center justify-center bg-black/40 hover:bg-black/60 border border-white/10 rounded text-white transition-all"
                         >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20 12H4" />
                           </svg>
                         </button>
@@ -1363,7 +1466,7 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
                             }
                             setLocalAdjustments(newAdjustments)
                           }}
-                          className="input-dark rounded px-2 py-1 w-16 text-white text-sm text-center"
+                          className="flex-1 min-w-0 bg-black/40 border border-white/10 rounded px-1 text-center text-white text-sm focus:border-red-500 focus:outline-none"
                           step="0.1"
                           placeholder="0"
                         />
@@ -1374,15 +1477,15 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
                             newAdjustments[activeTab] = { ...newAdjustments[activeTab], [key]: current + 1 }
                             setLocalAdjustments(newAdjustments)
                           }}
-                          className="input-dark px-2 py-1 rounded text-white hover:bg-white/10"
+                          className="w-8 h-8 flex items-center justify-center bg-black/40 hover:bg-black/60 border border-white/10 rounded text-white transition-all"
                         >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
                           </svg>
                         </button>
                         <button
                           onClick={() => saveGlobalAdjustment(key)}
-                          className="btn-primary px-3 py-1 rounded text-xs font-medium text-gray-900"
+                          className="bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold px-2 py-1 rounded uppercase tracking-wide transition-all shadow-lg hover:shadow-red-500/20"
                         >
                           Aplicar
                         </button>
@@ -1410,10 +1513,10 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
             className="w-full card-glass rounded-xl p-4 flex items-center justify-between hover:bg-white/10 transition-all"
           >
             <div className="flex items-center gap-2">
-              <svg className="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
               </svg>
-              <span className="text-lg font-semibold text-amber-400">
+              <span className="text-lg font-semibold text-red-500">
                 Agregar Nuevo {activeTab === 'cauchos' ? 'Caucho' : 'Batería'}
               </span>
             </div>
@@ -1424,7 +1527,7 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
 
           {showAddPanel && (
             <div className="card-glass rounded-2xl p-4 md:p-6 mt-4">
-              <h2 className="text-lg font-semibold text-amber-400 mb-4">Agregar Nuevo Producto</h2>
+              <h2 className="text-lg font-semibold text-red-500 mb-4">Agregar Nuevo Producto</h2>
               
               <div className="mb-4 flex gap-2 flex-wrap">
                 <ExcelImport onImport={importProducts} />
@@ -1435,7 +1538,7 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
                 />
                 <button
                   onClick={exportToExcel}
-                  className="btn-primary px-4 py-2 rounded-lg font-medium text-gray-900 transition-all shadow-lg hover:shadow-amber-500/20 flex items-center gap-2"
+                  className="btn-primary px-4 py-2 rounded-lg font-medium text-white transition-all shadow-lg hover:shadow-red-500/20 flex items-center gap-2"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -1444,7 +1547,7 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
                 </button>
                 <button
                    onClick={() => alert("Función de subir foto pendiente de implementación")}
-                   className="btn-primary px-4 py-2 rounded-lg font-medium text-gray-900 transition-all shadow-lg hover:shadow-amber-500/20 flex items-center gap-2"
+                   className="btn-primary px-4 py-2 rounded-lg font-medium text-white transition-all shadow-lg hover:shadow-red-500/20 flex items-center gap-2"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -1481,7 +1584,7 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">Precio Lista ($)</label>
+                  <label className="block text-sm text-gray-400 mb-1">Precio Lista (Bs)</label>
                   <input
                     type="number"
                     value={addForm.precioListaBs}
@@ -1507,7 +1610,7 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
                   />
                 </div>
                 <div className="flex items-end">
-                  <button type="submit" className="btn-primary w-full px-4 py-2 rounded-lg font-medium text-gray-900 transition-all shadow-lg hover:shadow-amber-500/20">
+                  <button type="submit" className="btn-primary w-full px-4 py-2 rounded-lg font-medium text-white transition-all shadow-lg hover:shadow-red-500/20">
                     Agregar
                   </button>
                 </div>
@@ -1520,7 +1623,7 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
       {/* Product List */}
       <div className="card-glass rounded-2xl p-4 md:p-6">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold text-amber-400 flex items-center gap-2">
+          <h2 className="text-lg font-semibold text-red-500 flex items-center gap-2">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
             </svg>
@@ -1567,20 +1670,22 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
                   currentDefaults={defaultAdjustments[activeTab] || { cashea: 0, transferencia: 0, divisas: 0, custom: 0 }}
                   priceColumns={priceColumns}
                   tempGlobalDiscounts={tempGlobalDiscounts}
+                  taxRate={taxRate}
                 />
             ))
           )}
         </div>
 
         {/* Desktop View */}
-        <div className="hidden md:block overflow-x-auto">
-          <table className="w-full min-w-[1000px]">
+        <div className="hidden md:block">
+          <table className="w-full">
             <thead>
               <tr className="border-b border-white/10 text-left">
                   <th className="pb-3 text-sm font-medium text-gray-400">Descripcion</th>
                   {priceColumns.map((col) => (
-                    <th key={col.key} className="pb-3 text-sm font-medium text-amber-400 text-right">{col.label}</th>
+                    <th key={col.key} className="pb-3 text-sm font-medium text-red-500 text-right">{col.label}</th>
                   ))}
+                  <th className="pb-3 text-sm font-medium text-gray-400 text-right">Lista (Bs)</th>
                   <th className="pb-3 text-sm font-medium text-gray-400 text-right">Lista ($)</th>
                 <th className="pb-3 text-sm font-medium text-gray-400 text-center">Acciones</th>
               </tr>
@@ -1613,6 +1718,9 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
                             currentDefaults={defaultAdjustments[activeTab] || { cashea: 0, transferencia: 0, divisas: 0, custom: 0 }}
                             priceColumns={priceColumns}
                             tempGlobalDiscounts={tempGlobalDiscounts}
+                            taxRate={taxRate}
+                            exchangeRate={exchangeRate}
+                            viewCurrency={viewCurrency}
                           />
                 ))
               )}
@@ -1625,7 +1733,7 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
       {showEditModal && selectedProduct && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="card-glass rounded-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <h3 className="text-xl font-semibold text-amber-400 mb-4">Editar Producto</h3>
+            <h3 className="text-xl font-semibold text-red-500 mb-4">Editar Producto</h3>
             <form onSubmit={(e) => { e.preventDefault(); updateProduct(); }}>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
                 <div>
@@ -1649,46 +1757,53 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-400 mb-1">Precio Lista ($)</label>
-                  <input
-                    type="number"
-                    value={editForm.precioListaBs}
-                    onChange={(e) => setEditForm({ ...editForm, precioListaBs: parseFloat(e.target.value) || 0 })}
-                    className="input-dark rounded-lg px-3 py-2 w-full text-white"
-                    min="0"
-                    step="0.01"
-                    required
-                  />
+                  <label className="block text-sm text-gray-400 mb-1">Precio Lista (Bs)</label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold">Bs</span>
+                    <input
+                      type="number"
+                      value={editForm.precioListaBs}
+                      onChange={(e) => setEditForm({ ...editForm, precioListaBs: parseFloat(e.target.value) || 0 })}
+                      className="input-dark rounded-lg pl-9 pr-3 py-2 w-full text-white"
+                      min="0"
+                      step="0.01"
+                      required
+                    />
+                  </div>
                 </div>
                 <div>
                   <label className="block text-sm text-gray-400 mb-1">Precio Lista ($)</label>
-                  <input
-                    type="number"
-                    value={editForm.precioListaUsd}
-                    onChange={(e) => setEditForm({ ...editForm, precioListaUsd: parseFloat(e.target.value) || 0 })}
-                    className="input-dark rounded-lg px-3 py-2 w-full text-white"
-                    min="0"
-                    step="0.01"
-                    required
-                  />
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-green-500 font-bold">$</span>
+                    <input
+                      type="number"
+                      value={editForm.precioListaUsd}
+                      onChange={(e) => setEditForm({ ...editForm, precioListaUsd: parseFloat(e.target.value) || 0 })}
+                      className="input-dark rounded-lg pl-8 pr-3 py-2 w-full text-white"
+                      min="0"
+                      step="0.01"
+                      required
+                    />
+                  </div>
                 </div>
               </div>
               
               <div className="border-t border-white/10 pt-4 mb-4">
                 <h4 className="text-sm font-semibold text-gray-300 mb-3">Ajustes Individuales (opcional - dejar vacío para usar global)</h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {priceColumns.map(({ key, label }) => {
+                  {priceColumns.map(({ key, label, base }) => {
                     const currentValue = (editForm as any)[`adjustment${key.charAt(0).toUpperCase() + key.slice(1)}`]
                     const isGlobal = currentValue === '' || currentValue === undefined
                     const effectiveAdjustment = isGlobal 
                       ? (defaultAdjustments[activeTab]?.[key] || 0)
                       : parseFloat(currentValue as string) || 0
                       
-                    const basePrice = (key === 'divisas' || key === 'custom') 
+                    const currency = base || 'bs'
+                    const basePrice = currency === 'usd'
                       ? editForm.precioListaUsd 
                       : editForm.precioListaBs
                       
-                    const finalPrice = calculatePrice(basePrice, effectiveAdjustment)
+                    const finalPrice = Math.max(0, calculatePrice(basePrice, effectiveAdjustment, currency))
                     
                     return (
                       <div key={key} className="card-glass rounded-lg p-3">
@@ -1697,12 +1812,12 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
                           type="number"
                           value={currentValue || ''}
                           onChange={(e) => setEditForm({ ...editForm, [`adjustment${key.charAt(0).toUpperCase() + key.slice(1)}`]: e.target.value })}
-                          className="input-dark rounded px-3 py-2 w-full text-white text-sm"
+                          className="input-dark rounded-lg px-3 py-2 w-full text-white text-sm"
                           step="0.1"
                           placeholder="Global"
                         />
                         <div className={`text-right text-xs mt-1 font-medium ${effectiveAdjustment < 0 ? 'text-red-400' : effectiveAdjustment > 0 ? 'text-green-400' : 'text-gray-400'}`}>
-                           ${finalPrice.toFixed(2)} ({effectiveAdjustment > 0 ? '+' : ''}{effectiveAdjustment}%)
+                           {currency === 'usd' ? '$' : 'Bs'}{finalPrice.toFixed(2)} ({effectiveAdjustment > 0 ? '+' : ''}{effectiveAdjustment}%)
                         </div>
                       </div>
                     )
@@ -1720,12 +1835,61 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
                 </button>
                 <button
                   type="submit"
-                  className="flex-1 btn-primary px-4 py-2 rounded-lg font-medium text-gray-900"
+                  className="flex-1 btn-primary px-4 py-2 rounded-lg font-medium text-white transition-all shadow-lg hover:shadow-red-500/20"
                 >
                   Guardar Cambios
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Column Modal */}
+      {editingColumn && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="card-glass rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-white/20 animate-in fade-in zoom-in duration-200">
+            <h3 className="text-xl font-semibold text-red-500 mb-2">Editar Columna</h3>
+            <p className="text-gray-200 mb-6 leading-relaxed">Modifica el nombre y la moneda base:</p>
+            
+            <div className="space-y-4 mb-6">
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">Nombre</label>
+                <input 
+                  className="w-full input-dark rounded-lg px-4 py-3 text-white border-white/10 focus:border-amber-500/50 transition-all outline-none" 
+                  placeholder="Nombre de la columna" 
+                  type="text" 
+                  value={editingColumn.label}
+                  onChange={(e) => setEditingColumn({...editingColumn, label: e.target.value})}
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">Moneda Base</label>
+                <select 
+                  className="w-full input-dark rounded-lg px-4 py-3 text-white border-white/10 focus:border-amber-500/50 transition-all outline-none"
+                  value={editingColumn.base}
+                  onChange={(e) => setEditingColumn({...editingColumn, base: e.target.value as 'bs' | 'usd'})}
+                >
+                  <option value="bs">Base Bs</option>
+                  <option value="usd">Base $</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button 
+                onClick={() => setEditingColumn(null)}
+                className="flex-1 px-4 py-2.5 rounded-xl font-medium bg-gray-700/50 hover:bg-gray-700 text-gray-300 transition-all border border-white/5"
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={() => editPriceColumn(editingColumn.key, editingColumn.label, editingColumn.base)}
+                className="flex-1 btn-primary px-4 py-2.5 rounded-xl font-medium text-gray-900 transition-all shadow-lg shadow-amber-500/20 active:scale-95"
+              >
+                Guardar
+              </button>
+            </div>
           </div>
         </div>
       )}

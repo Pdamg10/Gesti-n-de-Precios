@@ -211,13 +211,13 @@ export default function AdminPanel({ socket, currentUser, connectedUsers: propCo
       {/* All Users */}
       <div>
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-lg font-semibold text-amber-400">Usuarios Conectados</h3>
+          <h3 className="text-lg font-semibold text-red-500">Usuarios Conectados</h3>
           <span className="px-3 py-1 rounded-full bg-white/10 border border-white/10 text-xs font-medium text-gray-300">
             Total: {connectedUsers.length}
           </span>
           <button 
             onClick={() => socket.emit('request-user-list')}
-            className="ml-2 text-xs text-amber-400 hover:text-amber-300 underline"
+            className="ml-2 text-xs text-red-400 hover:text-red-300 underline"
           >
             Refrescar
           </button>
@@ -258,7 +258,7 @@ export default function AdminPanel({ socket, currentUser, connectedUsers: propCo
                     {user.userType === 'admin' ? '👑' : '👷'}
                     {formatName(user.name, user.lastName)}
                     {(user.socketId === socket.id || (currentUser && user.name === currentUser.name && user.lastName === currentUser.lastName)) && (
-                      <span className="text-[10px] bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">Tú</span>
+                      <span className="text-[10px] bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">Tú</span>
                     )}
                   </div>
                   <div className="text-[10px] text-gray-400 font-medium">
@@ -304,7 +304,7 @@ export default function AdminPanel({ socket, currentUser, connectedUsers: propCo
       {/* Password Management - Super Admin Only */}
       {isSuperAdmin && (
         <div>
-          <h3 className="text-lg font-semibold text-amber-400 mb-3">Gestión de Contraseña</h3>
+          <h3 className="text-lg font-semibold text-red-500 mb-3">Gestión de Contraseña</h3>
           <div className="space-y-3">
             <div className="flex flex-wrap gap-3">
               <button
@@ -336,7 +336,7 @@ export default function AdminPanel({ socket, currentUser, connectedUsers: propCo
       {/* Backup - Super Admin Only */}
       {isSuperAdmin && (
         <div className="border-t border-white/10 pt-4">
-          <h3 className="text-lg font-semibold text-amber-400 mb-3">Copia de Seguridad y Restauración</h3>
+          <h3 className="text-lg font-semibold text-red-500 mb-3">Copia de Seguridad y Restauración</h3>
           <div className="space-y-4">
             <div className="p-4 rounded-lg bg-blue-900/20 border border-blue-500/30">
               <h4 className="text-sm font-medium text-blue-300 mb-2">Descargar Copia de Seguridad</h4>
@@ -391,7 +391,7 @@ export default function AdminPanel({ socket, currentUser, connectedUsers: propCo
       {showPasswordModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="card-glass rounded-2xl p-6 w-full max-w-md">
-            <h3 className="text-xl font-semibold text-white mb-4">
+            <h3 className="text-xl font-semibold text-red-500 mb-4">
               {passwordModalType === 'admin' ? 'Cambiar Contraseña de Admin' : 'Cambiar Contraseña de Trabajadores'}
             </h3>
             
@@ -432,7 +432,7 @@ export default function AdminPanel({ socket, currentUser, connectedUsers: propCo
                 <button
                   onClick={handleChangePassword}
                   disabled={isLoading}
-                  className="flex-1 btn-primary px-4 py-2 rounded-lg font-medium text-gray-900 disabled:opacity-50 transition-all shadow-lg hover:shadow-amber-500/20"
+                  className="flex-1 btn-primary px-4 py-2 rounded-lg font-medium text-gray-900 disabled:opacity-50 transition-all shadow-lg hover:shadow-red-500/20"
                 >
                   {isLoading ? 'Cambiando...' : 'Cambiar'}
                 </button>

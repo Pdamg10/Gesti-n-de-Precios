@@ -19,7 +19,7 @@ export const metadata: Metadata = {
   keywords: ["Precios", "Gestión", "Inventario", "Next.js", "React"],
   authors: [{ name: "Admin" }],
   icons: {
-    icon: "/icon",
+    icon: "/neumatico.svg",
   },
   openGraph: {
     title: "Gestiór de Precios",
@@ -45,8 +45,11 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground overflow-x-hidden`}
       >
+        <div className="fixed inset-0 bg-black -z-50">
+           <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-gray-900 via-black to-black opacity-80"></div>
+        </div>
         <ModalProvider>
           {children}
           <Toaster />

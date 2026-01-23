@@ -21,12 +21,15 @@ interface ProductRowProps {
   product: Product
   isAdmin: boolean
   getEffectiveAdjustment: (product: Product, type: string) => number
-  calculatePrice: (basePrice: number, adjustment: number) => number
+  calculatePrice: (basePrice: number, adjustment: number, currency?: 'bs' | 'usd') => number
   openEditModal: (product: Product) => void
   openDeleteModal: (product: Product) => void
   currentDefaults: { [key: string]: number }
-  priceColumns: { key: string, label: string }[]
+  priceColumns: { key: string, label: string, base?: 'bs' | 'usd' }[]
   tempGlobalDiscounts?: { bs: number, usd: number }
+  taxRate?: number
+  exchangeRate?: number
+  viewCurrency?: 'bs' | 'usd'
 }
 
 export default function ProductRow({
@@ -38,53 +41,90 @@ export default function ProductRow({
   openDeleteModal,
   currentDefaults,
   priceColumns,
-  tempGlobalDiscounts = { bs: 0, usd: 0 }
+  tempGlobalDiscounts = { bs: 0, usd: 0 },
+  taxRate = 16,
+  exchangeRate = 60,
+  viewCurrency = 'bs'
 }: ProductRowProps) {
   const getDisplayedBasePrice = (currency: 'bs' | 'usd') => {
     const base = currency === 'bs' ? product.precioListaBs : product.precioListaUsd
     const discount = tempGlobalDiscounts[currency]
-    if (!discount || discount === 0) return base
+    if (!discount || discount === 0) return Math.max(0, base)
     const factor = 1 + (discount / 100)
     const val = base * factor
-    return Math.round(val * 100) / 100
+    return Math.max(0, Math.round(val * 100) / 100)
   }
 
   return (
     <tr key={product.id} className="border-b border-white/5 hover:bg-white/10 transition-colors">
       <td className="py-3 pr-3">
-        <div className="font-mono text-amber-400 font-semibold">{product.medida}</div>
+        <div className="font-mono text-red-500 font-bold">{product.medida}</div>
         <div className="text-sm text-gray-400">{product.type}</div>
       </td>
-      {(priceColumns || []).map(({ key: type }) => {
+      {(priceColumns || []).map(({ key: type, base }) => {
         const adjustment = getEffectiveAdjustment(product, type)
-        const isUsd = type === 'divisas' || type === 'custom'
-        const basePrice = isUsd ? getDisplayedBasePrice('usd') : getDisplayedBasePrice('bs')
-        const finalPrice = calculatePrice(basePrice, adjustment)
+        const nativeCurrency = base || 'usd' // The actual currency of this column
+        const isNativeUsd = nativeCurrency === 'usd'
         
-        // Determine if individual or global based on value comparison
-        const defaultAdj = currentDefaults?.[type] || 0
-        const isIndividual = Math.abs(adjustment - defaultAdj) > 0.01
+        // 1. Get base price in native currency
+        // FIX: Always use the price from the list (which includes global adjustments) as the base
+        // If native column is USD, use USD list price. If Bs, use Bs list price.
+        // This ensures "Base: $50.00" matches the List Price column.
+        const nativeBasePrice = isNativeUsd ? getDisplayedBasePrice('usd') : getDisplayedBasePrice('bs')
         
-        return (
+        // 2. Calculate final price in native currency (includes tax if Bs)
+        const nativeFinalPrice = Math.max(0, calculatePrice(nativeBasePrice, adjustment, nativeCurrency))
+        const nativeTaxAmount = nativeCurrency === 'bs' ? nativeBasePrice * (taxRate / 100) : 0
+
+          // Conversion Logic
+          let displayBasePrice = nativeBasePrice
+          let displayFinalPrice = nativeFinalPrice
+          let displayTaxAmount = nativeTaxAmount
+
+          if (viewCurrency === 'bs' && isNativeUsd) {
+             displayBasePrice = nativeBasePrice * exchangeRate
+             displayFinalPrice = nativeFinalPrice * exchangeRate
+             // Tax logic: if viewing in Bs, tax should apply?
+             // Usually USD prices don't have tax added on top, but if converted to Bs they might.
+             // Keeping consistent: if source is USD, no tax added unless explicitly handled.
+          } else if (viewCurrency === 'usd' && !isNativeUsd) {
+             displayBasePrice = nativeBasePrice / exchangeRate
+             displayFinalPrice = nativeFinalPrice / exchangeRate
+             displayTaxAmount = nativeTaxAmount / exchangeRate
+          } else if (viewCurrency === 'bs' && !isNativeUsd) {
+             // Viewing Bs, Source Bs - Tax is already in nativeTaxAmount
+          }
+
+          const defaultAdj = currentDefaults?.[type] || 0
+          const isIndividual = Math.abs(adjustment - defaultAdj) > 0.01
+
+          return (
           <td key={type} className="py-3 px-2 text-right">
-            <div className="text-xs text-gray-300 mb-0.5 font-medium">Base: {isUsd ? '$' : '$'}{basePrice.toFixed(2)}</div>
-            <div className={`text-lg mb-0.5 font-bold ${adjustment < 0 ? 'text-red-400' : adjustment > 0 ? 'text-green-400' : 'text-gray-400'}`}>
-              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-bold ${
-                adjustment < 0 
-                  ? 'bg-red-500/20 text-red-400 border border-red-500/50' 
-                  : adjustment > 0 
-                    ? 'bg-green-500/20 text-green-400 border border-green-500/50'
-                    : 'bg-gray-500/20 text-gray-400 border border-gray-500/50'
-              }`}>
-                {(adjustment >= 0 ? '+' : '')}{adjustment}%
-              </span>
-              {isIndividual && <span className="text-amber-400 ml-1" title="Ajuste individual">●</span>}
+            <div className="text-xs text-gray-300 mb-0.5 font-medium">
+              Base: {nativeCurrency === 'usd' ? '$' : 'Bs'}{nativeBasePrice.toFixed(2)}
             </div>
-            <div className="font-mono text-xs font-medium text-white">Total: {isUsd ? '$' : '$'}{finalPrice.toFixed(2)}</div>
+            <div className={`text-sm mb-0.5 font-bold ${adjustment < 0 ? 'text-red-400' : adjustment > 0 ? 'text-green-400' : 'text-gray-400'}`}>
+              {(adjustment >= 0 ? '+' : '')}{adjustment}%
+              {isIndividual && <span className="text-red-500 ml-1" title="Ajuste individual">●</span>}
+            </div>
+            {nativeCurrency === 'bs' && (
+              <div className="text-xs text-gray-400 mb-0.5 font-medium">
+                IVA: ${displayTaxAmount.toFixed(2)}
+                <span className="text-gray-500 ml-1">
+                  ({viewCurrency === 'usd' ? 'Bs' : '$'}{(viewCurrency === 'usd' ? displayTaxAmount * exchangeRate : displayTaxAmount / exchangeRate).toFixed(2)})
+                </span>
+              </div>
+            )}
+            <div className="font-mono text-sm font-bold text-white">
+              {nativeCurrency === 'bs' ? 'Total + IVA:' : 'Total:'} ${displayFinalPrice.toFixed(2)}
+              <span className="text-gray-400 text-xs ml-1 font-normal">
+                 / {viewCurrency === 'usd' ? 'Bs' : '$'}{(viewCurrency === 'usd' ? displayFinalPrice * exchangeRate : displayFinalPrice / exchangeRate).toFixed(2)}
+              </span>
+            </div>
           </td>
         )
       })}
-      <td className="py-3 px-2 text-right font-mono text-sm">${getDisplayedBasePrice('bs').toFixed(2)}</td>
+      <td className="py-3 px-2 text-right font-mono text-sm">Bs{getDisplayedBasePrice('bs').toFixed(2)}</td>
       <td className="py-3 px-2 text-right font-mono text-sm">${getDisplayedBasePrice('usd').toFixed(2)}</td>
       <td className="py-3 pl-2 text-center">
         <div className="flex justify-center gap-1">

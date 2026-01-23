@@ -85,7 +85,7 @@ export const ModalProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="card-glass rounded-2xl p-6 w-full max-w-sm shadow-2xl border border-white/20 animate-in fade-in zoom-in duration-200">
             {options.title && (
-              <h3 className="text-xl font-semibold text-amber-400 mb-2">{options.title}</h3>
+              <h3 className="text-xl font-semibold text-red-500 mb-2">{options.title}</h3>
             )}
             <p className="text-gray-200 mb-6 leading-relaxed">{options.message}</p>
             
