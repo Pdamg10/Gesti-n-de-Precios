@@ -115,6 +115,22 @@ export function useRealtimeData(userType: 'admin' | 'worker' = 'worker', userInf
         console.log('Supabase Presence Sync:', users)
         setConnectedUsers(users)
       })
+      .on('broadcast', { event: 'kick-user' }, (payload) => {
+        if (payload.targetId === sessionId) {
+           console.warn('You have been kicked!')
+           localStorage.removeItem('user_type')
+           localStorage.removeItem('user_info')
+           window.location.reload()
+        }
+      })
+      .on('broadcast', { event: 'remove-admin' }, (payload) => {
+         if (payload.targetId === sessionId) {
+             console.warn('Admin privileges removed!')
+             localStorage.removeItem('user_type')
+             localStorage.removeItem('user_info')
+             window.location.reload()
+         }
+      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, () => {
         console.log('Product change detected, reloading...')
         loadDataFromAPI()
@@ -146,11 +162,14 @@ export function useRealtimeData(userType: 'admin' | 'worker' = 'worker', userInf
 
     setChannel(newChannel)
 
+    // Internal listeners registry for MockSocket
+    const listeners: Record<string, Function[]> = {}
+
     // Create Mock Socket for backward compatibility
     const mockSocket: MockSocket = {
       id: sessionId,
       connected: true,
-      emit: (event: string, payload?: any) => {
+      emit: async (event: string, payload?: any) => {
         console.log('Mock Socket Emit:', event, payload)
         if (event === 'identify-user') {
           // Re-track with updated info if needed
@@ -163,12 +182,40 @@ export function useRealtimeData(userType: 'admin' | 'worker' = 'worker', userInf
             lastActivity: new Date().toISOString()
           })
         }
+        
+        if (event === 'kick-user') {
+            await newChannel.send({
+                type: 'broadcast',
+                event: 'kick-user',
+                payload: { targetId: payload }
+            })
+            listeners['kick-success']?.forEach(cb => cb('Usuario expulsado correctamente'))
+        }
+
+        if (event === 'remove-admin') {
+            await newChannel.send({
+                type: 'broadcast',
+                event: 'remove-admin',
+                payload: { targetId: payload }
+            })
+            listeners['remove-admin-success']?.forEach(cb => cb('Administrador removido correctamente'))
+        }
+
         // 'request-user-list' is handled automatically by presence sync
       },
       on: (event: string, cb: any) => {
-        // Implement minimal listeners if needed, mostly no-op as we handle state internally
+        if (!listeners[event]) listeners[event] = []
+        listeners[event].push(cb)
       },
-      off: () => {},
+      off: (event: string, cb?: any) => {
+         if (listeners[event]) {
+             if (cb) {
+                 listeners[event] = listeners[event].filter(l => l !== cb)
+             } else {
+                 delete listeners[event]
+             }
+         }
+      },
       close: () => {
         supabase.removeChannel(newChannel)
       }
