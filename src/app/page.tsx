@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { Virtuoso } from 'react-virtuoso'
 import ExcelImport from '@/components/ExcelImport'
 import PdfImportExport from '@/components/PdfImportExport'
 import AuthModal from '@/components/AuthModal'
@@ -349,49 +350,82 @@ export default function Home() {
           return
       }
 
-      // 1. Update products (Batch)
-      const updateRes = await fetch('/api/products/batch-update', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            type: activeTab,
-            adjustments: { [type]: delta }
-        })
-      })
+      // 1. Optimistic Update (Immediate Feedback)
       
-      if (!updateRes.ok) throw new Error('Failed to update products')
-
-      // 2. Update Default Adjustments
+      // Update Default Adjustments State
       const currentDefault = defaultAdjustments[activeTab] || { cashea: 0, transferencia: 0, divisas: 0, custom: 0, pagoMovil: 0 }
       const newDefaults = {
           ...currentDefault,
           [type]: (currentDefault[type] || 0) + delta
       }
       
-      // Save new defaults
-      await fetch(`/api/settings/default_adj_${activeTab}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ settingValue: JSON.stringify(newDefaults) })
-      })
-
-      // 3. Reset Local Adjustment for this type to 0
-      const newLocals = { ...localAdjustments }
-      newLocals[activeTab] = { ...newLocals[activeTab], [type]: '' }
-      setLocalAdjustments(newLocals)
-      
-      // Update defaults state
       const newDefaultState = { ...defaultAdjustments }
       newDefaultState[activeTab] = newDefaults
       setDefaultAdjustments(newDefaultState)
       
-      // REFRESH DATA to show updated prices immediately
-      refreshData()
+      // Reset Local Adjustment State
+      const newLocals = { ...localAdjustments }
+      newLocals[activeTab] = { ...newLocals[activeTab], [type]: '' }
+      setLocalAdjustments(newLocals)
+
+      // Update Products State (Apply delta to all products of this type)
+      // Since batch-update adds the delta to individual adjustments, we mimic that here
+      setProducts(prevProducts => prevProducts.map(p => {
+        if (p.productType !== activeTab) return p
+        
+        // Construct the key like adjustmentCashea
+        const key = `adjustment${type.charAt(0).toUpperCase() + type.slice(1)}`
+        const currentVal = (p as any)[key]
+        // If it was null, it remains null (inherits). 
+        // WAIT: The backend batch-update ADDS to existing value OR 0.
+        // So if it was null, it becomes 0 + delta = delta.
+        // So it stops being null (inheriting) and becomes a fixed value?
+        // Let's check backend logic: newValues.adjustmentX = (product.adjustmentX || 0) + adjustments.X
+        // Yes, it effectively sets a value, so it overrides the global default?
+        // But we just updated the global default too!
+        // If we update BOTH global default AND individual product adjustments...
+        // Then `getEffectiveAdjustment` will see the individual value (delta) and use it.
+        // But the global default is now (old + delta).
+        // If product had 0 (inherited), now it has delta.
+        // If product relies on global, it should be null.
+        // The backend logic seems to "bake in" the adjustment to every product?
+        // If so, my previous analysis of "inheriting" might be generous.
+        // If the backend sets adjustmentCashea = 10, then it's 10.
+        // If global is 10.
+        // Effective is 10.
+        // If I later change global to 20. Product stays 10.
+        // This means "Global Adjustment" button acts as "Apply this change to everyone right now" rather than "Change the default for everyone".
+        // It does BOTH: updates defaults AND updates products.
+        // So yes, I should update the product state to have the new value.
+        
+        const newVal = (currentVal || 0) + delta
+        return { ...p, [key]: newVal }
+      }))
+
+      // 2. Background API Calls
+      await Promise.all([
+        // Update products (Batch)
+        fetch('/api/products/batch-update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                type: activeTab,
+                adjustments: { [type]: delta }
+            })
+        }),
+        // Update Default Adjustments
+        fetch(`/api/settings/default_adj_${activeTab}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ settingValue: JSON.stringify(newDefaults) })
+        })
+      ])
       
       showAlert(`Ajuste ${type} aplicado y guardado`, 'Éxito')
     } catch (error) {
       console.error('Error saving adjustment:', error)
-      showAlert('Error al guardar los ajustes', 'Error')
+      showAlert('Error al guardar los ajustes (los cambios visuales pueden revertirse al recargar)', 'Error')
+      refreshData() // Rollback/Sync on error
     }
   }
 
@@ -763,54 +797,21 @@ export default function Home() {
     }
   }
 
-  const calculatePrice = (basePrice: number, adjustment: number, currency: 'bs' | 'usd' = 'bs', applyTax: boolean = false) => {
+  const calculatePrice = useCallback((basePrice: number, adjustment: number, currency: 'bs' | 'usd' = 'bs', applyTax: boolean = false) => {
     // Aplicar impuesto solo si está habilitado para esta columna
     const priceWithTax = applyTax ? basePrice * (1 + taxRate / 100) : basePrice
     // Luego aplicar ajuste (descuento o incremento)
     const finalPrice = priceWithTax * (1 + adjustment / 100)
     return finalPrice
-  }
+  }, [taxRate])
 
-  const getEffectiveAdjustment = (product: Product, type: string) => {
-    // Si la columna es dinámica y no existe en el producto, usamos 0 o el global
-    const individualKey = `adjustment${type.charAt(0).toUpperCase() + type.slice(1)}`
-    const individualAdjustment = (product as any)[individualKey]
-    
-    // Check if the adjustment is specifically defined (not null/undefined)
-    if (individualAdjustment !== undefined && individualAdjustment !== null && individualAdjustment !== '') {
-      return parseFloat(individualAdjustment)
-    }
-    
-    return globalAdjustments[product.productType]?.[type] || defaultAdjustments[product.productType]?.[type] || 0
-  }
-
-  // Función mejorada para calcular todos los precios
-  const calculateAllPrices = (product: Product) => {
-    const prices: Record<string, { base: number; final: number; adjustment: number }> = {}
-    
-    priceColumns.forEach(col => {
-      const type = col.key
-      const basePrice = col.base === 'usd' ? product.precioListaUsd : product.precioListaBs
-      const adjustment = getEffectiveAdjustment(product, type)
-      const finalPrice = calculatePrice(basePrice, adjustment, col.base || 'usd')
-      
-      prices[type] = {
-        base: basePrice,
-        final: finalPrice,
-        adjustment: adjustment
-      }
-    })
-    
-    return prices
-  }
-
-  const filteredProducts = products.filter(product => 
+  const filteredProducts = useMemo(() => products.filter(product => 
     product.productType === activeTab &&
     (product.type.toLowerCase().includes(searchTerm.toLowerCase()) ||
     product.medida.toLowerCase().includes(searchTerm.toLowerCase()))
-  )
+  ), [products, activeTab, searchTerm])
 
-  const openEditModal = (product: Product) => {
+  const openEditModal = useCallback((product: Product) => {
     setSelectedProduct(product)
     setEditForm({
       type: product.type,
@@ -824,12 +825,12 @@ export default function Home() {
       adjustmentPagoMovil: (product as any).adjustmentPagoMovil?.toString() || ''
     })
     setShowEditModal(true)
-  }
+  }, [])
 
-  const openDeleteModal = (product: Product) => {
+  const openDeleteModal = useCallback((product: Product) => {
     setSelectedProduct(product)
     setShowDeleteModal(true)
-  }
+  }, [])
 
   const addPriceColumn = async () => {
     if (!newColumnName.trim()) return
@@ -838,6 +839,24 @@ export default function Home() {
     const newCol = { key, label: newColumnName, base: newColumnBase, applyTax: newColumnBase === 'bs' }
     const newColumns = [...priceColumns, newCol]
     
+    // 1. Optimistic Update
+    setPriceColumns(newColumns)
+    setNewColumnName('')
+    setNewColumnBase('bs') // Reset to default
+    setIsManagingColumns(false)
+    
+    // Initialize adjustments for new column
+    const newLocals = { ...localAdjustments }
+    const newDefaults = { ...defaultAdjustments }
+    
+    ;['cauchos', 'baterias', ...customLists.map(l => l.id)].forEach((listType) => {
+      if (newLocals[listType]) newLocals[listType][key] = ''
+      if (newDefaults[listType]) newDefaults[listType][key] = 0
+    })
+    
+    setLocalAdjustments(newLocals)
+    setDefaultAdjustments(newDefaults)
+
     try {
       await fetch('/api/settings/price_columns', {
         method: 'PUT',
@@ -845,27 +864,11 @@ export default function Home() {
         body: JSON.stringify({ settingValue: JSON.stringify(newColumns) })
       })
       
-      setPriceColumns(newColumns)
-      setNewColumnName('')
-      setNewColumnBase('bs') // Reset to default
-      setIsManagingColumns(false)
-      
-      // Initialize adjustments for new column
-      const newLocals = { ...localAdjustments }
-      const newDefaults = { ...defaultAdjustments }
-      
-      ;['cauchos', 'baterias', ...customLists.map(l => l.id)].forEach((listType) => {
-        if (newLocals[listType]) newLocals[listType][key] = ''
-        if (newDefaults[listType]) newDefaults[listType][key] = 0
-      })
-      
-      setLocalAdjustments(newLocals)
-      setDefaultAdjustments(newDefaults)
-      
       showAlert('Columna de precio agregada correctamente', 'Éxito')
     } catch (error) {
       console.error('Error adding column:', error)
       showAlert('Error al agregar columna', 'Error')
+      refreshData() // Rollback
     }
   }
 
@@ -876,9 +879,33 @@ export default function Home() {
     if (!await showConfirm('¿Eliminar esta columna de precio? Los datos asociados podrían perderse.', 'Confirmar eliminación')) return
 
     const newColumns = priceColumns.filter(c => c.key !== keyToDelete)
+    const prevColumns = [...priceColumns]
+    
+    // 1. Optimistic Update
+    setPriceColumns(newColumns)
+    
+    // Clean up local adjustments state
+    const newLocals = { ...localAdjustments }
+    Object.keys(newLocals).forEach(listType => {
+      if (newLocals[listType] && newLocals[listType][keyToDelete] !== undefined) {
+        const { [keyToDelete]: removed, ...rest } = newLocals[listType]
+        newLocals[listType] = rest
+      }
+    })
+    setLocalAdjustments(newLocals)
+    
+    // Clean up default adjustments state
+    const newDefaults = { ...defaultAdjustments }
+    Object.keys(newDefaults).forEach(listType => {
+      if (newDefaults[listType] && newDefaults[listType][keyToDelete] !== undefined) {
+        const { [keyToDelete]: removed, ...rest } = newDefaults[listType]
+        newDefaults[listType] = rest
+      }
+    })
+    setDefaultAdjustments(newDefaults)
     
     try {
-      // 1. Update columns list in database
+      // 2. Update columns list in database
       const response = await fetch('/api/settings/price_columns', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -892,33 +919,12 @@ export default function Home() {
          throw new Error('Failed to update columns: ' + errText)
       }
       
-      // 2. Update local state
-      setPriceColumns(newColumns)
-      
-      // 3. Clean up local adjustments state
-      const newLocals = { ...localAdjustments }
-      Object.keys(newLocals).forEach(listType => {
-        if (newLocals[listType] && newLocals[listType][keyToDelete] !== undefined) {
-          const { [keyToDelete]: removed, ...rest } = newLocals[listType]
-          newLocals[listType] = rest
-        }
-      })
-      setLocalAdjustments(newLocals)
-      
-      // 4. Clean up default adjustments state
-      const newDefaults = { ...defaultAdjustments }
-      Object.keys(newDefaults).forEach(listType => {
-        if (newDefaults[listType] && newDefaults[listType][keyToDelete] !== undefined) {
-          const { [keyToDelete]: removed, ...rest } = newDefaults[listType]
-          newDefaults[listType] = rest
-        }
-      })
-      setDefaultAdjustments(newDefaults)
-      
       showAlert('Columna eliminada correctamente', 'Éxito')
     } catch (error) {
       console.error('Error removing column:', error)
       showAlert('Error al eliminar columna', 'Error')
+      setPriceColumns(prevColumns) // Rollback
+      refreshData()
     }
   }
 
@@ -989,57 +995,43 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
         return
     }
 
-    const productsToUpdate = filteredProducts
-    let updated = 0
-    let errors = 0
-    
     const multiplier = 1 + (adjustment / 100)
     
-    // Show loading
-    const loadingToast = document.createElement('div')
-    loadingToast.className = 'fixed bottom-4 right-4 bg-blue-600 text-white px-4 py-2 rounded-lg shadow-lg z-50'
-    loadingToast.textContent = 'Guardando cambios...'
-    document.body.appendChild(loadingToast)
+    // 1. Optimistic Update
+    setProducts(prevProducts => prevProducts.map(p => {
+        if (p.productType !== activeTab) return p
+        
+        if (currency === 'bs') {
+            const newPrice = Math.max(0, roundToNearest5(p.precioListaBs * multiplier))
+            return { ...p, precioListaBs: newPrice }
+        } else {
+            const newPrice = Math.max(0, roundToNearest5(p.precioListaUsd * multiplier))
+            return { ...p, precioListaUsd: newPrice }
+        }
+    }))
     
-    for (const product of productsToUpdate) {
-      const currentPrice = currency === 'bs' ? product.precioListaBs : product.precioListaUsd
-      // Aplicar multiplicador y asegurar que no sea negativo
-      const newPriceRaw = currentPrice * multiplier
-      const newPrice = Math.max(0, roundToNearest5(newPriceRaw))
-      
-      try {
-        const updateData = currency === 'bs' 
-            ? { ...product, precioListaBs: newPrice }
-            : { ...product, precioListaUsd: newPrice }
-
-        const response = await fetch(`/api/products/${product.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(updateData)
+    // Reset visual counter immediately
+    setTempGlobalDiscounts(prev => ({ ...prev, [currency]: 0 }))
+    
+    // 2. Background API Call
+    try {
+        const response = await fetch('/api/products/batch-price-update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                type: activeTab,
+                percentageBs: currency === 'bs' ? adjustment : 0,
+                percentageUsd: currency === 'usd' ? adjustment : 0
+            })
         })
         
-        if (response.ok) {
-          updated++
-        } else {
-          errors++
-        }
-      } catch (error) {
-        errors++
-      }
-    }
-    
-    loadingToast.remove()
-    
-    if (updated > 0) {
-      // Reset only the applied currency
-      setTempGlobalDiscounts(prev => ({ ...prev, [currency]: 0 }))
-      
-      refreshData()
-      showAlert(`✅ Precios base actualizados permanentemente`, 'Éxito')
-    }
-    
-    if (errors > 0) {
-      showAlert(`❌ ${errors} errores`, 'Error')
+        if (!response.ok) throw new Error('Failed to batch update prices')
+        
+        showAlert(`✅ Precios base actualizados permanentemente`, 'Éxito')
+    } catch (error) {
+        console.error('Error applying base price adjustment:', error)
+        showAlert('Error al aplicar cambios (los cambios visuales pueden revertirse)', 'Error')
+        refreshData() // Rollback
     }
   }
 
@@ -1060,33 +1052,39 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
         return
     }
 
-    // Logic similar to above but for both...
-    // For brevity reusing logic pattern
-    const loadingToast = document.createElement('div')
-    loadingToast.className = 'fixed bottom-4 right-4 bg-blue-600 text-white px-4 py-2 rounded-lg shadow-lg z-50'
-    loadingToast.textContent = 'Guardando cambios globales...'
-    document.body.appendChild(loadingToast)
-
-    let updated = 0
-    
-    for (const product of filteredProducts) {
-        const newBs = adjBs !== 0 ? roundToNearest5(product.precioListaBs * (1 + adjBs/100)) : product.precioListaBs
-        const newUsd = adjUsd !== 0 ? roundToNearest5(product.precioListaUsd * (1 + adjUsd/100)) : product.precioListaUsd
+    // 1. Optimistic Update
+    setProducts(prevProducts => prevProducts.map(p => {
+        if (p.productType !== activeTab) return p
         
-        try {
-            await fetch(`/api/products/${product.id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ...product, precioListaBs: newBs, precioListaUsd: newUsd })
-            })
-            updated++
-        } catch (e) {}
-    }
-
-    loadingToast.remove()
+        const newBs = adjBs !== 0 ? Math.max(0, roundToNearest5(p.precioListaBs * (1 + adjBs/100))) : p.precioListaBs
+        const newUsd = adjUsd !== 0 ? Math.max(0, roundToNearest5(p.precioListaUsd * (1 + adjUsd/100))) : p.precioListaUsd
+        
+        return { ...p, precioListaBs: newBs, precioListaUsd: newUsd }
+    }))
+    
+    // Reset visual counters
     setTempGlobalDiscounts({ bs: 0, usd: 0 })
-    refreshData()
-    showAlert(`✅ ${updated} productos actualizados`, 'Éxito')
+
+    // 2. Background API Call
+    try {
+        const response = await fetch('/api/products/batch-price-update', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                type: activeTab,
+                percentageBs: adjBs,
+                percentageUsd: adjUsd
+            })
+        })
+        
+        if (!response.ok) throw new Error('Failed to batch update prices')
+        
+        showAlert(`✅ Productos actualizados permanentemente`, 'Éxito')
+    } catch (error) {
+        console.error('Error applying both adjustments:', error)
+        showAlert('Error al aplicar cambios (los cambios visuales pueden revertirse)', 'Error')
+        refreshData() // Rollback
+    }
   }
 
   return (
@@ -1709,21 +1707,25 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
               </p>
             </div>
           ) : (
-            filteredProducts.map((product) => (
-              <MobileProductCard
+            <Virtuoso
+              useWindowScroll
+              data={filteredProducts}
+              itemContent={(index, product) => (
+                <MobileProductCard
                   key={product.id}
                   product={product}
                   isAdmin={isAdmin}
-                  getEffectiveAdjustment={getEffectiveAdjustment}
                   calculatePrice={calculatePrice}
                   openEditModal={openEditModal}
                   openDeleteModal={openDeleteModal}
                   currentDefaults={defaultAdjustments[activeTab] || { cashea: 0, transferencia: 0, divisas: 0, custom: 0 }}
+                  currentGlobals={globalAdjustments[activeTab] || { cashea: 0, transferencia: 0, divisas: 0, custom: 0 }}
                   priceColumns={priceColumns}
                   tempGlobalDiscounts={tempGlobalDiscounts}
                   taxRate={taxRate}
                 />
-            ))
+              )}
+            />
           )}
         </div>
 
@@ -1762,11 +1764,11 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
                             key={product.id}
                             product={product}
                             isAdmin={isAdmin}
-                            getEffectiveAdjustment={getEffectiveAdjustment}
                             calculatePrice={calculatePrice}
                             openEditModal={openEditModal}
                             openDeleteModal={openDeleteModal}
                             currentDefaults={defaultAdjustments[activeTab] || { cashea: 0, transferencia: 0, divisas: 0, custom: 0 }}
+                            currentGlobals={globalAdjustments[activeTab] || { cashea: 0, transferencia: 0, divisas: 0, custom: 0 }}
                             priceColumns={priceColumns}
                             tempGlobalDiscounts={tempGlobalDiscounts}
                             taxRate={taxRate}

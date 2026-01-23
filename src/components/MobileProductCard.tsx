@@ -1,5 +1,7 @@
 'use client'
 
+import { memo } from 'react'
+
 interface Product {
   id: string
   productType: string
@@ -11,6 +13,7 @@ interface Product {
   adjustmentTransferencia?: number
   adjustmentDivisas?: number
   adjustmentCustom?: number
+  adjustmentPagoMovil?: number
   createdAt: string
   updatedAt: string
 }
@@ -18,32 +21,43 @@ interface Product {
 interface MobileProductCardProps {
   product: Product
   isAdmin: boolean
-  getEffectiveAdjustment: (product: Product, type: string) => number
   calculatePrice: (basePrice: number, adjustment: number, currency?: 'bs' | 'usd', applyTax?: boolean) => number
   openEditModal: (product: Product) => void
   openDeleteModal: (product: Product) => void
   currentDefaults: { [key: string]: number }
-  priceColumns: { key: string, label: string, base?: 'bs' | 'usd' }[]
+  currentGlobals: { [key: string]: number }
+  priceColumns: { key: string, label: string, base?: 'bs' | 'usd', applyTax?: boolean }[]
   tempGlobalDiscounts?: { bs: number, usd: number }
   taxRate?: number
   exchangeRate?: number
   viewCurrency?: 'bs' | 'usd'
 }
 
-export default function MobileProductCard({
+const MobileProductCard = memo(function MobileProductCard({
   product,
   isAdmin,
-  getEffectiveAdjustment,
   calculatePrice,
   openEditModal,
   openDeleteModal,
   currentDefaults,
+  currentGlobals,
   priceColumns,
   tempGlobalDiscounts = { bs: 0, usd: 0 },
   taxRate = 16,
   exchangeRate = 60,
   viewCurrency = 'bs'
 }: MobileProductCardProps) {
+  const getEffectiveAdjustment = (type: string) => {
+    const individualKey = `adjustment${type.charAt(0).toUpperCase() + type.slice(1)}`
+    const individualAdjustment = (product as any)[individualKey]
+    
+    if (individualAdjustment !== undefined && individualAdjustment !== null && individualAdjustment !== '') {
+      return parseFloat(individualAdjustment)
+    }
+    
+    return currentGlobals?.[type] || currentDefaults?.[type] || 0
+  }
+
   const getDisplayedBasePrice = (currency: 'bs' | 'usd') => {
     const base = currency === 'bs' ? product.precioListaBs : product.precioListaUsd
     const discount = tempGlobalDiscounts[currency]
@@ -91,7 +105,7 @@ export default function MobileProductCard({
       {/* Prices Grid */}
       <div className="grid grid-cols-2 gap-1.5">
         {(priceColumns || []).map(({ key: type, label, base, applyTax }) => {
-          const adjustment = getEffectiveAdjustment(product, type)
+          const adjustment = getEffectiveAdjustment(type)
           const nativeCurrency = base || 'usd'
           const isNativeUsd = nativeCurrency === 'usd'
           
@@ -148,4 +162,6 @@ export default function MobileProductCard({
       </div>
     </div>
   )
-}
+})
+
+export default MobileProductCard
