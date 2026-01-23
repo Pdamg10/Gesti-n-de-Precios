@@ -1242,37 +1242,39 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
                   <h3 className="text-sm text-gray-400 mb-2">Aplicar IVA a Columnas:</h3>
                   <div className="grid grid-cols-2 gap-2 mb-4">
                     {priceColumns.map(col => (
-                      <label key={col.key} className="flex items-center gap-2 cursor-pointer bg-black/20 p-2 rounded border border-white/5 hover:border-white/10">
-                        <input 
-                          type="checkbox"
-                          checked={col.applyTax}
-                          onChange={async (e) => {
-                            const updated = priceColumns.map(c => 
-                              c.key === col.key ? { ...c, applyTax: e.target.checked } : c
-                            )
-                            setPriceColumns(updated)
-                            // Auto save columns config when toggling
-                            try {
-                              await fetch('/api/settings/price_columns', {
-                                method: 'PUT',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ settingValue: JSON.stringify(updated) })
-                              })
-                            } catch (err) { console.error(err) }
-                          }}
-                          className="w-4 h-4 rounded border-gray-600 text-red-600 focus:ring-red-500 bg-gray-700"
-                        />
-                        <span className="text-xs text-gray-300">{col.label}</span>
-                      </label>
+                      <div 
+                        key={col.key} 
+                        onClick={async () => {
+                          const updated = priceColumns.map(c => 
+                            c.key === col.key ? { ...c, applyTax: !c.applyTax } : c
+                          )
+                          setPriceColumns(updated)
+                          // Auto save columns config when toggling
+                          try {
+                            await fetch('/api/settings/price_columns', {
+                              method: 'PUT',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ settingValue: JSON.stringify(updated) })
+                            })
+                          } catch (err) { console.error(err) }
+                        }}
+                        className={`cursor-pointer p-2 rounded-lg border transition-all text-center select-none flex items-center justify-center ${
+                          col.applyTax 
+                            ? 'bg-red-600 border-red-500 text-white shadow-lg shadow-red-900/50' 
+                            : 'bg-black/20 border-white/5 text-gray-400 hover:border-white/10 hover:bg-white/5'
+                        }`}
+                      >
+                        <span className="text-xs font-bold tracking-wide">{col.label}</span>
+                      </div>
                     ))}
                   </div>
 
-                  <div className="flex gap-4 items-center">
+                  <div className="flex gap-3 items-center">
                     <button
                       onClick={saveTaxRate}
-                      className="flex-1 btn-primary px-4 py-2 rounded-lg font-medium text-white transition-all shadow-lg hover:shadow-red-500/20"
+                      className="flex-1 btn-primary px-4 py-3 rounded-lg font-bold text-white transition-all shadow-lg hover:shadow-red-500/20 uppercase tracking-wide text-sm"
                     >
-                      Guardar Configuración
+                      Guardar
                     </button>
                     <button
                       onClick={() => {
@@ -1286,7 +1288,7 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`, `Confi
                           }).catch(console.error)
                           saveTaxRate()
                       }}
-                      className="text-xs text-orange-500 hover:text-orange-400 font-medium transition-colors px-2"
+                      className="flex-1 bg-orange-600 hover:bg-orange-700 px-4 py-3 rounded-lg font-bold text-white transition-all shadow-lg hover:shadow-orange-500/20 uppercase tracking-wide text-sm"
                       title="Restablecer Impuesto y Selección"
                     >
                       Restablecer
