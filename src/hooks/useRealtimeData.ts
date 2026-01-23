@@ -95,24 +95,31 @@ export function useRealtimeData(userType: 'admin' | 'worker' = 'worker', userInf
     const newChannel = supabase.channel('room1')
       .on('presence', { event: 'sync' }, () => {
         const state = newChannel.presenceState()
-        const users: ConnectedUser[] = []
+        const uniqueUsers = new Map<string, ConnectedUser>()
         
-        // Transform presence state to ConnectedUser array
+        // Transform presence state to ConnectedUser array with deduplication
         Object.keys(state).forEach(key => {
           state[key].forEach((presence: any) => {
-            users.push({
-              id: key, // Use presence key as ID
-              socketId: presence.socketId || key, // Map socketId
-              userType: presence.userType || 'worker',
-              name: presence.name,
-              lastName: presence.lastName,
-              connectedAt: presence.connectedAt || new Date().toISOString(),
-              lastActivity: presence.lastActivity || new Date().toISOString()
-            })
+            // Create a unique key based on user identity (Name + Lastname + Type)
+            // This prevents duplicate entries when a user has multiple tabs open
+            const identifier = `${presence.name || ''}-${presence.lastName || ''}-${presence.userType || ''}`.toLowerCase()
+            
+            if (!uniqueUsers.has(identifier)) {
+              uniqueUsers.set(identifier, {
+                id: key, // Use presence key as ID
+                socketId: presence.socketId || key, // Map socketId
+                userType: presence.userType || 'worker',
+                name: presence.name,
+                lastName: presence.lastName,
+                connectedAt: presence.connectedAt || new Date().toISOString(),
+                lastActivity: presence.lastActivity || new Date().toISOString()
+              })
+            }
           })
         })
         
-        console.log('Supabase Presence Sync:', users)
+        const users = Array.from(uniqueUsers.values())
+        console.log('Supabase Presence Sync (Deduplicated):', users)
         setConnectedUsers(users)
       })
       .on('broadcast', { event: 'kick-user' }, (payload) => {
@@ -144,16 +151,18 @@ export function useRealtimeData(userType: 'admin' | 'worker' = 'worker', userInf
           console.log('Connected to Supabase Realtime')
           setIsConnected(true)
           
-          // Track user presence
-          const presenceData = {
-            socketId: sessionId,
-            userType,
-            name: userInfo?.name || 'Anónimo',
-            lastName: userInfo?.lastName || '',
-            connectedAt: new Date().toISOString(),
-            lastActivity: new Date().toISOString()
+          // Track user presence ONLY if we have valid credentials
+          if (userInfo?.name && userInfo?.lastName) {
+            const presenceData = {
+              socketId: sessionId,
+              userType,
+              name: userInfo.name,
+              lastName: userInfo.lastName,
+              connectedAt: new Date().toISOString(),
+              lastActivity: new Date().toISOString()
+            }
+            newChannel.track(presenceData)
           }
-          newChannel.track(presenceData)
         } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
           console.log('Disconnected from Supabase Realtime:', status)
           setIsConnected(false)
@@ -172,15 +181,17 @@ export function useRealtimeData(userType: 'admin' | 'worker' = 'worker', userInf
       emit: async (event: string, payload?: any) => {
         console.log('Mock Socket Emit:', event, payload)
         if (event === 'identify-user') {
-          // Re-track with updated info if needed
-          newChannel.track({
-            socketId: sessionId,
-            userType: payload?.userType || userType,
-            name: payload?.name || userInfo?.name,
-            lastName: payload?.lastName || userInfo?.lastName,
-            connectedAt: new Date().toISOString(),
-            lastActivity: new Date().toISOString()
-          })
+          // Re-track with updated info if provided
+          if (payload?.name && payload?.lastName) {
+            newChannel.track({
+              socketId: sessionId,
+              userType: payload?.userType || userType,
+              name: payload.name,
+              lastName: payload.lastName,
+              connectedAt: new Date().toISOString(),
+              lastActivity: new Date().toISOString()
+            })
+          }
         }
         
         if (event === 'kick-user') {
@@ -231,7 +242,7 @@ export function useRealtimeData(userType: 'admin' | 'worker' = 'worker', userInf
 
   // Effect to update presence when user info changes
   useEffect(() => {
-    if (channel && isConnected && userInfo) {
+    if (channel && isConnected && userInfo?.name && userInfo?.lastName) {
        // Update presence track with new info
        const sessionId = socket?.id || 'unknown'
        channel.track({
