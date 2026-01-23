@@ -94,19 +94,19 @@ const ProductRow = memo(function ProductRow({
         return (
           <td key={type} className="py-3 px-2 text-right">
             <div className="text-xs text-gray-300 mb-0.5 font-medium">
-              Base: {isNativeUsd ? '$' : 'Bs'}{nativeBasePrice.toFixed(2)}
+              Base: ${nativeBasePrice.toFixed(2)}
             </div>
             <div className={`text-sm mb-0.5 font-bold ${adjustment < 0 ? 'text-red-400' : adjustment > 0 ? 'text-green-400' : 'text-gray-400'}`}>
               {(adjustment >= 0 ? '+' : '')}{adjustment}%
               {isIndividual && <span className="text-red-500 ml-1" title="Ajuste individual">●</span>}
             </div>
             <div className="font-mono text-sm font-bold text-white">
-              {shouldApplyTax ? 'Total + IVA:' : 'Total:'} {isNativeUsd ? '$' : 'Bs'}{nativeFinalPrice.toFixed(2)}
+              {shouldApplyTax ? 'Total + IVA:' : 'Total:'} ${nativeFinalPrice.toFixed(2)}
             </div>
           </td>
         )
       })}
-      <td className="py-3 px-2 text-right font-mono text-sm">Bs{getDisplayedBasePrice('bs').toFixed(2)}</td>
+      <td className="py-3 px-2 text-right font-mono text-sm">${getDisplayedBasePrice('bs').toFixed(2)}</td>
       <td className="py-3 px-2 text-right font-mono text-sm">${getDisplayedBasePrice('usd').toFixed(2)}</td>
       <td className="py-3 pl-2 text-center">
         <div className="flex justify-center gap-1">
