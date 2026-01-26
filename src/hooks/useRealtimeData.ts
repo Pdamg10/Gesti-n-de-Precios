@@ -147,9 +147,18 @@ export function useRealtimeData(userType: 'admin' | 'worker' = 'worker', userInf
 
         if (isIdentityMatch || isIdMatch) {
            console.warn('You have been kicked!')
+           try { supabase.removeChannel(newChannel) } catch {}
            localStorage.removeItem('user_type')
            localStorage.removeItem('user_info')
-           window.location.reload()
+           // Clear app cookies
+           try {
+             document.cookie.split(';').forEach(c => {
+               const eq = c.indexOf('=')
+               const name = eq > -1 ? c.substring(0, eq).trim() : c.trim()
+               if (name) document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`
+             })
+           } catch {}
+           window.location.href = '/login'
         }
       })
       .on('broadcast', { event: 'remove-admin' }, (payload) => {
@@ -165,10 +174,42 @@ export function useRealtimeData(userType: 'admin' | 'worker' = 'worker', userInf
 
          if (isIdentityMatch || isIdMatch) {
              console.warn('Admin privileges removed!')
+             try { supabase.removeChannel(newChannel) } catch {}
              localStorage.removeItem('user_type')
              localStorage.removeItem('user_info')
-             window.location.reload()
+             // Clear app cookies
+             try {
+               document.cookie.split(';').forEach(c => {
+                 const eq = c.indexOf('=')
+                 const name = eq > -1 ? c.substring(0, eq).trim() : c.trim()
+                 if (name) document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`
+               })
+             } catch {}
+             window.location.href = '/login'
          }
+      })
+      .on('broadcast', { event: 'logout-user' }, (payload) => {
+        const currentInfo = userInfoRef.current
+        const currentType = userTypeRef.current
+        const isIdentityMatch = 
+          payload?.name === currentInfo?.name &&
+          payload?.lastName === currentInfo?.lastName &&
+          payload?.userType === currentType
+        const isIdMatch = payload?.targetId === sessionId
+        if (isIdentityMatch || isIdMatch) {
+          console.warn('You have been logged out remotely')
+          try { supabase.removeChannel(newChannel) } catch {}
+          localStorage.removeItem('user_type')
+          localStorage.removeItem('user_info')
+          try {
+            document.cookie.split(';').forEach(c => {
+              const eq = c.indexOf('=')
+              const name = eq > -1 ? c.substring(0, eq).trim() : c.trim()
+              if (name) document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`
+            })
+          } catch {}
+          window.location.href = '/login'
+        }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, () => {
         console.log('Product change detected, reloading...')
@@ -244,6 +285,16 @@ export function useRealtimeData(userType: 'admin' | 'worker' = 'worker', userInf
                 payload: msgPayload
             })
             listeners['remove-admin-success']?.forEach(cb => cb('Administrador removido correctamente'))
+        }
+        
+        if (event === 'logout-user') {
+            const msgPayload = typeof payload === 'string' ? { targetId: payload } : payload
+            await newChannel.send({
+                type: 'broadcast',
+                event: 'logout-user',
+                payload: msgPayload
+            })
+            listeners['logout-success']?.forEach(cb => cb('Sesión cerrada correctamente'))
         }
 
         // 'request-user-list' is handled automatically by presence sync
