@@ -211,6 +211,10 @@ export default function Home() {
 
   const ADMIN_PASSWORD = "Chirica001*";
   const SUPER_ADMIN_PASSWORD = "Chiricapoz001*";
+  
+  // Dynamic Passwords State
+  const [adminPassword, setAdminPassword] = useState(ADMIN_PASSWORD);
+  const [workerPassword, setWorkerPassword] = useState(ADMIN_PASSWORD); // Fallback init
 
   // Actualizar estados cuando cambian los datos en tiempo real
   useEffect(() => {
@@ -303,22 +307,58 @@ export default function Home() {
     }
 
     // Load default adjustments
+    // Logic update: Prioritize GLOBAL defaults to enforce specific unification
     const defaults = { ...defaultAdjustments };
+    
+    // Check for global setting first
+    const globalAdjSetting = settingsData.find(s => s.settingKey === 'default_adj_global');
+    let globalDefaults: any = null;
+    
+    if (globalAdjSetting && globalAdjSetting.settingValue) {
+        try {
+            globalDefaults = JSON.parse(globalAdjSetting.settingValue);
+        } catch (e) {
+            console.error("Error parsing global defaults", e);
+        }
+    } else {
+        // Migration Strategy: If no global setting exists, use 'cauchos' as the source of truth
+        // (Since the user likely configured it there first)
+        const cauchosSetting = settingsData.find(s => s.settingKey === 'default_adj_cauchos');
+        if (cauchosSetting && cauchosSetting.settingValue) {
+             try {
+                globalDefaults = JSON.parse(cauchosSetting.settingValue);
+                // We could optionally save this to default_adj_global immediately, 
+                // but setting the state is enough for the session.
+            } catch (e) {
+                console.error("Error parsing cauchos defaults for migration", e);
+            }
+        }
+    }
+
     ["cauchos", "baterias", ...customLists.map((l) => l.id)].forEach(
       (listType: string) => {
-        const adjSetting = settingsData.find(
-          (s) => s.settingKey === `default_adj_${listType}`,
-        );
-        if (adjSetting && adjSetting.settingValue) {
-          try {
-            const parsed = JSON.parse(adjSetting.settingValue);
-            defaults[listType] = {
-              ...defaults[listType], // keep existing defaults if any
-              ...parsed // overwrite with saved values (including _discount keys)
+        // If global/inferred defaults exist, use them for EVERYTHING
+        if (globalDefaults) {
+             defaults[listType] = {
+              ...defaults[listType],
+              ...globalDefaults
             };
-          } catch (e) {
-            console.error("Error parsing default adjustments", e);
-          }
+        } else {
+            // Fallback: Legacy per-list settings (only if no global and no cauchos source found)
+            const adjSetting = settingsData.find(
+              (s) => s.settingKey === `default_adj_${listType}`,
+            );
+            if (adjSetting && adjSetting.settingValue) {
+              try {
+                const parsed = JSON.parse(adjSetting.settingValue);
+                defaults[listType] = {
+                  ...defaults[listType],
+                  ...parsed 
+                };
+              } catch (e) {
+                console.error("Error parsing default adjustments", e);
+              }
+            }
         }
       },
     );
@@ -386,6 +426,51 @@ export default function Home() {
       } catch (e) {
         console.error("Error parsing price columns", e);
       }
+    }
+
+
+    // Load Passwords
+    const adminPassSetting = settingsData.find(s => s.settingKey === 'admin_password');
+    if (adminPassSetting && adminPassSetting.settingValue) {
+        setAdminPassword(adminPassSetting.settingValue);
+    } else {
+        setAdminPassword(ADMIN_PASSWORD);
+    }
+    
+    const workerPassSetting = settingsData.find(s => s.settingKey === 'worker_password');
+    if (workerPassSetting && workerPassSetting.settingValue) {
+        setWorkerPassword(workerPassSetting.settingValue);
+    } else {
+        setWorkerPassword(ADMIN_PASSWORD); // Default worker same as basic admin or specific default
+    }
+  };
+
+  const changePassword = async (newPassword: string) => {
+    try {
+        const key = passwordModalType === 'admin' ? 'admin_password' : 'worker_password';
+        
+        await fetch('/api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                settingKey: key,
+                settingValue: newPassword
+            })
+        });
+
+        if (passwordModalType === 'admin') {
+            setAdminPassword(newPassword);
+        } else {
+            setWorkerPassword(newPassword);
+        }
+
+        showAlert(`Contraseña de ${passwordModalType === 'admin' ? 'Administrador' : 'Trabajador'} actualizada correctamente`, "Éxito");
+        setShowPasswordModal(false);
+        setPasswordForm({ currentPassword: '', newPassword: '' });
+        
+    } catch (error) {
+        console.error("Error changing password", error);
+        showAlert("Error al actualizar la contraseña", "Error");
     }
   };
 
@@ -627,37 +712,41 @@ export default function Home() {
 
       // 1. Optimistic Update (Immediate Feedback)
 
-      // Update Default Adjustments State
-      const currentDefault = defaultAdjustments[activeTab] || {
-        cashea: 0,
-        transferencia: 0,
-        divisas: 0,
-        custom: 0,
-        pagoMovil: 0,
-      };
-      const newDefaults = {
-        ...currentDefault,
-        [type]: (currentDefault[type] || 0) + delta,
-      };
-
+      // Update Default Adjustments State GLOBALLY (for all tabs)
       const newDefaultState = { ...defaultAdjustments };
-      newDefaultState[activeTab] = newDefaults;
+      const allTabs = Object.keys(newDefaultState);
+      
+      allTabs.forEach(tab => {
+          const currentDefaults = newDefaultState[tab] || {
+            cashea: 0,
+            transferencia: 0,
+            divisas: 0,
+            custom: 0,
+            pagoMovil: 0
+          };
+          newDefaultState[tab] = {
+            ...currentDefaults,
+            [type]: (currentDefaults[type] || 0) + delta
+          };
+      });
+
       setDefaultAdjustments(newDefaultState);
 
       // Reset Local Adjustment State
       const newLocals = { ...localAdjustments };
-      newLocals[activeTab] = { ...newLocals[activeTab], [type]: "" };
+      if (newLocals[activeTab]) {
+         newLocals[activeTab] = { ...newLocals[activeTab], [type]: "" };
+      }
       setLocalAdjustments(newLocals);
 
-      // Update Products State (Apply delta to all products of this type)
-      // Only if it's NOT a discount (discounts are purely global/config based)
+      // Update Products State (Apply delta to ALL products regardless of type)
+      // Only if it's NOT a discount
       const isDiscount = type.includes("_discount");
       
       if (!isDiscount) {
           setProducts((prevProducts) =>
             prevProducts.map((p) => {
-              if (p.productType !== activeTab) return p;
-    
+              // Apply to ALL products
               // Construct the key like adjustmentCashea
               const key = `adjustment${type.charAt(0).toUpperCase() + type.slice(1)}`;
               const currentVal = (p as any)[key];
@@ -669,27 +758,40 @@ export default function Home() {
       }
 
       // 2. Background API Calls
+      // Calculate the NEW global value based on the active tab (assuming they are synced, this is the new truth)
+      const currentVal = defaultAdjustments[activeTab]?.[type] || 0;
+      const newGlobalVal = currentVal + delta;
+      
+      // We save a "Global" settings object. 
+      // We need to fetch the current global object first? 
+      // Or we can just use the new state from one of the tabs as the source of truth.
+      const sourceOfTruth = newDefaultState[activeTab] || {};
+
       const promises = [
-          // Update Default Adjustments
-          fetch(`/api/settings/default_adj_${activeTab}`, {
+          // Update GLOBAL Default Adjustments
+          fetch(`/api/settings/default_adj_global`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ settingValue: JSON.stringify(newDefaults) }),
+            body: JSON.stringify({ settingValue: JSON.stringify(sourceOfTruth) }),
           }),
       ];
       
-      // Update products (Batch) - Only if not discount
+      // Update products (Batch) - Call for ALL types to ensure backend updates everything
+      // We can iterate over known types
       if (!isDiscount) {
-          promises.push(
-            fetch("/api/products/batch-update", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                type: activeTab,
-                adjustments: { [type]: delta },
-              }),
-            })
-          );
+          const typesToUpdate = ["cauchos", "baterias", ...customLists.map(c => c.id)];
+          typesToUpdate.forEach(t => {
+             promises.push(
+                fetch("/api/products/batch-update", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    type: t,
+                    adjustments: { [type]: delta },
+                  }),
+                })
+             );
+          });
       }
       
       await Promise.all(promises);
@@ -717,34 +819,43 @@ export default function Home() {
       return;
 
     try {
+      // Use current defaults of active tab as a base, but we will apply to ALL
       const currentDefaults = defaultAdjustments[activeTab] || {};
-      const newDefaults: Record<string, number> = {};
-
-      // Set all keys to 0
-      Object.keys(currentDefaults).forEach((key) => {
-        newDefaults[key] = 0;
+      const newDefaults = { ...currentDefaults };
+      
+      // Only reset keys that are explicitly discounts
+      Object.keys(newDefaults).forEach((key) => {
+        if (key.endsWith('_discount')) {
+          newDefaults[key] = 0;
+        }
       });
+      
+      // Update ALL tabs in state
+      const newDefaultState = { ...defaultAdjustments };
+      Object.keys(newDefaultState).forEach(tab => {
+          // Merge with existing tab defaults in case they have unique keys (unlikely now)
+          // Actually, we enforce uniformity, so we can just set them equal
+          newDefaultState[tab] = { ...newDefaults };
+      });
+      setDefaultAdjustments(newDefaultState);
 
-      // Save new defaults
-      await fetch(`/api/settings/default_adj_${activeTab}`, {
+      // Save new defaults GLOBALLY
+      await fetch(`/api/settings/default_adj_global`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ settingValue: JSON.stringify(newDefaults) }),
       });
 
-      // Clear local adjustments state
+      // Clear local adjustments state for ALL tabs
       const newLocals = { ...localAdjustments };
-      if (newLocals[activeTab]) {
-        Object.keys(newLocals[activeTab]).forEach((key) => {
-          newLocals[activeTab][key] = "";
-        });
-      }
+      Object.keys(newLocals).forEach(tab => {
+          if (newLocals[tab]) {
+            Object.keys(newLocals[tab]).forEach((key) => {
+              newLocals[tab][key] = "";
+            });
+          }
+      });
       setLocalAdjustments(newLocals);
-
-      // Update defaults state
-      const newDefaultState = { ...defaultAdjustments };
-      newDefaultState[activeTab] = newDefaults;
-      setDefaultAdjustments(newDefaultState);
 
       refreshData();
       showAlert("Todos los descuentos han sido reseteados a 0%", "Éxito");
@@ -1448,24 +1559,117 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`,
   // Iterate over all active inputs in localAdjustments and apply them
   const applyAllPaymentAdjustments = async () => {
     const adjustments = localAdjustments[activeTab] || {};
-    let appliedCount = 0;
+    const keysToApply = Object.keys(adjustments).filter(
+        k => adjustments[k] !== "" && adjustments[k] !== 0 && adjustments[k] !== undefined
+    );
 
-    // Create a sequence to avoid racing if multiple calls hit settings
-    for (const key of Object.keys(adjustments)) {
-      const val = adjustments[key];
-      if (val !== "" && val !== 0 && val !== undefined) {
-        await saveGlobalAdjustment(key, true); // Silent mode
-        appliedCount++;
-      }
+    if (keysToApply.length === 0) {
+      showAlert("No hay ajustes pendientes para aplicar", "Información");
+      return;
     }
 
-    if (appliedCount === 0) {
-      showAlert("No hay ajustes pendientes para aplicar", "Información");
-    } else {
-      showAlert(
-        `Se han aplicado ${appliedCount} ajustes correctamente`,
-        "Éxito",
-      );
+    // 1. Calculate New Global Defaults (State)
+    // We apply ALL changes to the current global state logic
+    // Since we now unify, we update ALL tabs with the SAME modifications
+    const newDefaultState = { ...defaultAdjustments };
+    const allTabs = Object.keys(newDefaultState);
+    
+    // We need a base to work from. Use activeTab as source of truth.
+    // Copy it to avoid mutating original state in place during calculation
+    const baseDefaultsSource = { ...(newDefaultState[activeTab] || {}) };
+    
+    // Accumulate all deltas into baseDefaultsSource
+    const accumulatedDeltas: Record<string, number> = {};
+    
+    keysToApply.forEach(key => {
+        const delta = parseFloat(adjustments[key]);
+        baseDefaultsSource[key] = (baseDefaultsSource[key] || 0) + delta;
+        accumulatedDeltas[key] = delta;
+    });
+
+    // Now propagate this NEW source of truth to ALL tabs
+    allTabs.forEach(tab => {
+        // We override the tab's defaults with the calculated base
+        // (This enforces strict synchronization)
+        newDefaultState[tab] = { ...baseDefaultsSource };
+    });
+
+    // 2. Optimistic Update: Default Adjustments
+    setDefaultAdjustments(newDefaultState);
+
+    // 3. Optimistic Update: Local Adjustments (Reset applied keys)
+    const newLocals = { ...localAdjustments };
+    // Clear in active tab (and others if we want to sync clear, but local can be disparate)
+    // Let's clear in active tab
+    if (newLocals[activeTab]) {
+         keysToApply.forEach(key => {
+             newLocals[activeTab][key] = "";
+         });
+    }
+    setLocalAdjustments(newLocals);
+
+    // 4. Optimistic Update: Products
+    // Apply deltas to ALL products
+    setProducts((prevProducts) =>
+        prevProducts.map((p) => {
+             let newP = { ...p };
+             keysToApply.forEach(key => {
+                 // Skip if it's a discount (discounts are config-only)
+                 if (key.includes("_discount")) return;
+                 
+                 const delta = accumulatedDeltas[key];
+                 const propKey = `adjustment${key.charAt(0).toUpperCase() + key.slice(1)}`;
+                 const currentVal = (newP as any)[propKey];
+                 newP = { ...newP, [propKey]: (currentVal || 0) + delta };
+             });
+             return newP;
+        })
+    );
+
+    // 5. API Calls
+    try {
+        const promises: Promise<Response>[] = [];
+        
+        // A. Save Settings (Global)
+        promises.push(
+            fetch(`/api/settings/default_adj_global`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ settingValue: JSON.stringify(baseDefaultsSource) }),
+            })
+        );
+        
+        // B. Update Products (Batch)
+        // We iterate over keys and known types to broadcast updates
+        const nonDiscountKeys = keysToApply.filter(k => !k.includes("_discount"));
+        
+        if (nonDiscountKeys.length > 0) {
+            const typesToUpdate = ["cauchos", "baterias", ...customLists.map(c => c.id)];
+            
+            nonDiscountKeys.forEach(key => {
+                const delta = accumulatedDeltas[key];
+                 typesToUpdate.forEach(t => {
+                     promises.push(
+                        fetch("/api/products/batch-update", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            type: t,
+                            adjustments: { [key]: delta },
+                          }),
+                        })
+                     );
+                  });
+            });
+        }
+
+        await Promise.all(promises);
+        showAlert(`Se han aplicado ${keysToApply.length} ajustes correctamente`, "Éxito");
+        
+    } catch (error) {
+        console.error("Error batch applying adjustments:", error);
+        refreshData(); // Sync
+        showAlert("Error al aplicar ajustes", "Error");
     }
   };
 
@@ -1543,12 +1747,12 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`,
 
 
   return (
-    <div className="min-h-screen gradient-bg text-white p-4 md:p-6">
+    <div className="min-h-screen gradient-bg text-white p-2 md:p-6">
       {/* Header */}
       <header className="text-center mb-8 pt-4">
         <div className="flex items-center justify-center gap-2 mb-2 scale-100 transition-transform">
           <h1
-            className="text-4xl md:text-6xl font-black tracking-tighter text-[#dc2626] drop-shadow-[0_2px_0_rgba(255,255,255,0.5)] flex items-center gap-1"
+            className="text-3xl md:text-6xl font-black tracking-tighter text-[#dc2626] drop-shadow-[0_2px_0_rgba(255,255,255,0.5)] flex items-center gap-1"
             style={{
               textShadow:
                 "2px 2px 0 #ffffff, -1px -1px 0 #ffffff, 1px -1px 0 #ffffff, -1px 1px 0 #ffffff, 1px 1px 0 #ffffff",
@@ -1598,7 +1802,7 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`,
             </svg>
           </h1>
           <h1
-            className="text-4xl md:text-6xl font-black tracking-tighter text-[#dc2626] drop-shadow-[0_2px_0_rgba(255,255,255,0.5)]"
+            className="text-3xl md:text-6xl font-black tracking-tighter text-[#dc2626] drop-shadow-[0_2px_0_rgba(255,255,255,0.5)]"
             style={{
               textShadow:
                 "2px 2px 0 #ffffff, -1px -1px 0 #ffffff, 1px -1px 0 #ffffff, -1px 1px 0 #ffffff, 1px 1px 0 #ffffff",
@@ -1607,7 +1811,7 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`,
             CHIRICA
           </h1>
         </div>
-        <p className="text-white font-bold tracking-wide uppercase text-xs md:text-sm bg-black/50 inline-block px-4 py-1 rounded-full backdrop-blur-sm border border-white/20 shadow-lg">
+        <p className="text-white font-bold tracking-wide uppercase text-[10px] md:text-sm bg-black/50 inline-block px-3 py-1 rounded-full backdrop-blur-sm border border-white/20 shadow-lg">
           Sistema de Gestión y Control
         </p>
 
@@ -1615,7 +1819,7 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`,
         <div className="flex justify-center gap-3 mt-8 flex-wrap items-center">
           <button
             onClick={() => setActiveTab("cauchos")}
-            className={`h-12 px-6 rounded-lg font-bold tracking-wide uppercase transition-all shadow-lg flex items-center justify-center min-w-[140px] ${
+            className={`h-10 md:h-12 px-3 md:px-6 rounded-lg font-bold tracking-wide uppercase transition-all shadow-lg flex items-center justify-center min-w-[110px] md:min-w-[140px] text-xs md:text-base ${
               activeTab === "cauchos"
                 ? "bg-red-600 text-white border border-red-500 shadow-red-900/50 scale-[1.02]"
                 : "bg-black/40 text-gray-300 hover:bg-white/10 hover:text-white border border-white/5"
@@ -1625,7 +1829,7 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`,
           </button>
           <button
             onClick={() => setActiveTab("baterias")}
-            className={`h-12 px-6 rounded-lg font-bold tracking-wide uppercase transition-all shadow-lg flex items-center justify-center min-w-[140px] ${
+            className={`h-10 md:h-12 px-3 md:px-6 rounded-lg font-bold tracking-wide uppercase transition-all shadow-lg flex items-center justify-center min-w-[110px] md:min-w-[140px] text-xs md:text-base ${
               activeTab === "baterias"
                 ? "bg-red-600 text-white border border-red-500 shadow-red-900/50 scale-[1.02]"
                 : "bg-black/40 text-gray-300 hover:bg-white/10 hover:text-white border border-white/5"
@@ -1637,7 +1841,7 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`,
             <>
               <button
                 onClick={() => setShowAddListModal(true)}
-                className="h-12 px-6 rounded-lg font-bold tracking-wide uppercase transition-all shadow-lg flex items-center justify-center min-w-[140px] bg-green-600/20 text-green-400 hover:bg-green-600/40 border-2 border-green-600/50 border-dashed hover:text-white"
+                className="h-10 md:h-12 px-3 md:px-6 rounded-lg font-bold tracking-wide uppercase transition-all shadow-lg flex items-center justify-center min-w-[110px] md:min-w-[140px] text-xs md:text-base bg-green-600/20 text-green-400 hover:bg-green-600/40 border-2 border-green-600/50 border-dashed hover:text-white"
               >
                 ➕ Agregar
               </button>
@@ -1660,7 +1864,8 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`,
                     await deleteCustomList(activeTab);
                   }
                 }}
-                className="h-12 px-6 rounded-lg font-bold tracking-wide uppercase transition-all shadow-lg flex items-center justify-center min-w-[140px] bg-red-600/20 text-red-400 hover:bg-red-600/40 border-2 border-red-600/50 border-dashed hover:text-white"
+
+                className="h-10 md:h-12 px-3 md:px-6 rounded-lg font-bold tracking-wide uppercase transition-all shadow-lg flex items-center justify-center min-w-[110px] md:min-w-[140px] text-xs md:text-base bg-red-600/20 text-red-400 hover:bg-red-600/40 border-2 border-red-600/50 border-dashed hover:text-white"
               >
                 ➖ Quitar
               </button>
@@ -1718,7 +1923,7 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`,
         <div className="mb-4">
           <button
             onClick={() => setShowConfigPanel(!showConfigPanel)}
-            className="w-full card-glass rounded-xl p-4 flex items-center justify-between hover:bg-white/10 transition-all font-semibold"
+            className="w-full card-glass rounded-xl p-3 md:p-4 flex items-center justify-between hover:bg-white/10 transition-all font-semibold"
           >
             <div className="flex items-center gap-2">
               <svg
@@ -2702,9 +2907,11 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`,
                 <th className="pb-3 text-base font-medium text-gray-400 text-right">
                   Lista ($)
                 </th>
-                <th className="pb-3 text-base font-medium text-gray-400 text-center">
-                  Acciones
-                </th>
+                {isAdmin && (
+                  <th className="pb-3 text-base font-medium text-gray-400 text-center">
+                    Acciones
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -3176,13 +3383,59 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`,
         </div>
       )}
 
+      {/* Password Change Modal */}
+      {showPasswordModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="card-glass rounded-2xl p-6 w-full max-w-md border border-white/20 shadow-2xl">
+                <h3 className="text-xl font-bold text-white mb-4">
+                    Cambiar Contraseña de {passwordModalType === 'admin' ? 'Administrador' : 'Trabajador'}
+                </h3>
+                
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-sm text-gray-400 mb-1">Nueva Contraseña</label>
+                        <input 
+                            type="text" 
+                            value={passwordForm.newPassword}
+                            onChange={(e) => setPasswordForm({...passwordForm, newPassword: e.target.value})}
+                            className="input-dark w-full rounded-lg px-4 py-3 text-white"
+                            placeholder="Introduce la nueva contraseña"
+                        />
+                    </div>
+                    
+                    <div className="flex gap-3 pt-2">
+                        <button
+                            onClick={() => setShowPasswordModal(false)}
+                            className="flex-1 px-4 py-2 rounded-lg font-medium bg-gray-700 hover:bg-gray-600 transition-all text-white"
+                        >
+                            Cancelar
+                        </button>
+                        <button
+                            onClick={() => {
+                                if (passwordForm.newPassword.length < 4) {
+                                    showAlert("La contraseña debe tener al menos 4 caracteres", "Error");
+                                    return;
+                                }
+                                changePassword(passwordForm.newPassword);
+                            }}
+                            className="flex-1 btn-primary px-4 py-2 rounded-lg font-medium text-gray-900 transition-all"
+                        >
+                            Guardar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+      )}
+
       <AuthModal
         isOpen={showAuthModal}
         onClose={() => setShowAuthModal(false)}
         onLogin={handleLogin}
         currentSocket={socket}
-        adminPassword={ADMIN_PASSWORD}
+        adminPassword={adminPassword}
         superAdminPassword={SUPER_ADMIN_PASSWORD}
+        workerPassword={workerPassword}
       />
     </div>
   );

@@ -68,10 +68,10 @@ const MobileProductCard = memo(function MobileProductCard({
   }
 
   return (
-    <div className="card-glass rounded-xl p-3 mb-3 border border-white/10 hover:bg-white/5 transition-all">
-      <div className="flex justify-between items-center mb-2">
+    <div className="card-glass rounded-xl p-2.5 mb-2.5 border border-white/10 hover:bg-white/5 transition-all">
+      <div className="flex justify-between items-center mb-1.5">
         <div className="flex items-center gap-2 overflow-hidden">
-          <h3 className="text-lg font-bold font-mono text-white truncate drop-shadow-sm">{product.medida}</h3>
+          <h3 className="text-base font-bold font-mono text-white truncate drop-shadow-sm">{product.medida}</h3>
           <span className="text-xs text-gray-400 px-1.5 py-0.5 rounded-full bg-white/5 border border-white/10 shrink-0">{product.type}</span>
         </div>
         

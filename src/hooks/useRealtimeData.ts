@@ -53,6 +53,7 @@ interface MockSocket {
   connected: boolean
   emit: (event: string, data?: any) => void
   on: (event: string, cb: any) => void
+  once: (event: string, cb: any) => void
   off: (event: string, cb?: any) => void
   close: () => void
 }
@@ -298,6 +299,17 @@ export function useRealtimeData(userType: 'admin' | 'worker' = 'worker', userInf
         }
 
         // 'request-user-list' is handled automatically by presence sync
+
+        // Mock Login Responses (since AuthModal falls through to here on failure)
+        if (event === 'worker-login' || event === 'admin-login') {
+            const isWorker = event === 'worker-login'
+            setTimeout(() => {
+                const errorEvent = isWorker ? 'worker-login-error' : 'admin-login-error'
+                if (listeners[errorEvent]) {
+                    listeners[errorEvent].forEach(cb => cb('Credenciales inválidas'))
+                }
+            }, 500)
+        }
       },
       on: (event: string, cb: any) => {
         if (!listeners[event]) listeners[event] = []
@@ -311,6 +323,16 @@ export function useRealtimeData(userType: 'admin' | 'worker' = 'worker', userInf
                  delete listeners[event]
              }
          }
+      },
+      once: (event: string, cb: any) => {
+        const wrapper = (...args: any[]) => {
+          cb(...args)
+          if (listeners[event]) {
+            listeners[event] = listeners[event].filter(l => l !== wrapper)
+          }
+        }
+        if (!listeners[event]) listeners[event] = []
+        listeners[event].push(wrapper)
       },
       close: () => {
         supabase.removeChannel(newChannel)

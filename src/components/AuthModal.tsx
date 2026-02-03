@@ -10,9 +10,10 @@ interface AuthModalProps {
   currentSocket: any
   adminPassword?: string
   superAdminPassword?: string
+  workerPassword?: string
 }
 
-export default function AuthModal({ isOpen, onClose, onLogin, currentSocket, adminPassword, superAdminPassword }: AuthModalProps) {
+export default function AuthModal({ isOpen, onClose, onLogin, currentSocket, adminPassword, superAdminPassword, workerPassword }: AuthModalProps) {
   const [authMode, setAuthMode] = useState<'login' | 'identify'>('identify')
   
   const [formData, setFormData] = useState({
@@ -61,6 +62,7 @@ export default function AuthModal({ isOpen, onClose, onLogin, currentSocket, adm
     // Verificación optimista local si se proporcionan las contraseñas
     if (adminPassword && superAdminPassword) {
       const isSuperKey = trimmedData.password === superAdminPassword
+      // Check validation against dynamic admin password if provided, or hardcoded fallback if needed (though avoiding hardcode is the goal)
       const isAdminKey = trimmedData.password === adminPassword
 
       if (isSuperKey || isAdminKey) {
@@ -137,12 +139,14 @@ export default function AuthModal({ isOpen, onClose, onLogin, currentSocket, adm
     const lastName = formData.lastName.trim()
     const password = formData.password.trim()
 
-    // Verificación optimista local como respaldo
-    if (password === 'Chirica001*' || password === 'Chiricapoz001*') {
+    // Dynamic Verification: Use prop if available, otherwise fallback
+    const correctWorkerPassword = workerPassword || 'Chirica001*';
+    
+    if (password === correctWorkerPassword || password === 'Chiricapoz001*') {
       onLogin('worker', { name, lastName })
       onClose()
       setIsLoading(false)
-      // Aun así intentamos notificar al servidor en segundo plano si hay conexión
+      // Notify server
       if (currentSocket?.connected) {
         currentSocket.emit('worker-login', { name, lastName, password })
       }
@@ -253,7 +257,7 @@ export default function AuthModal({ isOpen, onClose, onLogin, currentSocket, adm
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white px-4 py-3 rounded-lg font-bold disabled:opacity-50 transition-all shadow-lg hover:shadow-red-500/20 transform hover:scale-[1.02]"
+              className="w-full bg-linear-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 text-white px-4 py-3 rounded-lg font-bold disabled:opacity-50 transition-all shadow-lg hover:shadow-red-500/20 transform hover:scale-[1.02]"
             >
               {isLoading ? 'Verificando...' : 'Acceso Administrador'}
             </button>
@@ -330,7 +334,7 @@ export default function AuthModal({ isOpen, onClose, onLogin, currentSocket, adm
 
             <button
               type="submit"
-              className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white px-4 py-3 rounded-lg font-bold transition-all shadow-lg hover:shadow-blue-500/20 transform hover:scale-[1.02]"
+              className="w-full bg-linear-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white px-4 py-3 rounded-lg font-bold transition-all shadow-lg hover:shadow-blue-500/20 transform hover:scale-[1.02]"
             >
               Acceder como Trabajador
             </button>

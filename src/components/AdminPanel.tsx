@@ -162,7 +162,7 @@ export default function AdminPanel({ socket, currentUser, connectedUsers: propCo
                 <div className="flex gap-2">
                   {user.userType === 'worker' && (
                     <button
-                      onClick={() => handleKickWorker(user.id, user)}
+                      onClick={() => handleKickWorker(user.socketId, user)}
                       className="p-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs transition-all border border-red-500/20"
                       title="Sacar trabajador"
                     >
@@ -173,7 +173,7 @@ export default function AdminPanel({ socket, currentUser, connectedUsers: propCo
                   )}
                   {user.userType === 'admin' && isSuperAdmin && (
                     <button
-                      onClick={() => handleRemoveAdmin(user.id, user)}
+                      onClick={() => handleRemoveAdmin(user.socketId, user)}
                       className="p-2 rounded-lg bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 text-xs transition-all border border-orange-500/20"
                       title="Degradar admin"
                     >
