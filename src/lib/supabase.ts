@@ -94,5 +94,14 @@ export const db = {
     
     if (error) throw error
     return data[0]
+  },
+
+  async deleteSetting(key: string) {
+    const { error } = await supabaseAdmin
+      .from('settings')
+      .delete()
+      .eq('settingKey', key)
+    
+    if (error) throw error
   }
 }

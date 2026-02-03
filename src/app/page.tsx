@@ -210,7 +210,6 @@ export default function Home() {
   });
 
   const ADMIN_PASSWORD = "Chirica001*";
-  const SUPER_ADMIN_PASSWORD = "Chiricapoz001*";
   
   // Dynamic Passwords State
   const [adminPassword, setAdminPassword] = useState(ADMIN_PASSWORD);
@@ -3434,7 +3433,6 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`,
         onLogin={handleLogin}
         currentSocket={socket}
         adminPassword={adminPassword}
-        superAdminPassword={SUPER_ADMIN_PASSWORD}
         workerPassword={workerPassword}
       />
     </div>

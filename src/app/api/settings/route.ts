@@ -16,6 +16,9 @@ export async function POST(request: NextRequest) {
   try {
     const data = await request.json()
     
+    // Delete existing settings with this key to prevent duplicates
+    await db.deleteSetting(data.settingKey)
+    
     // Generate ID if not provided
     if (!data.id) {
       data.id = `setting_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`

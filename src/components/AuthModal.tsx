@@ -9,11 +9,10 @@ interface AuthModalProps {
   onLogin: (userType: 'admin' | 'worker', userInfo?: any) => void
   currentSocket: any
   adminPassword?: string
-  superAdminPassword?: string
   workerPassword?: string
 }
 
-export default function AuthModal({ isOpen, onClose, onLogin, currentSocket, adminPassword, superAdminPassword, workerPassword }: AuthModalProps) {
+export default function AuthModal({ isOpen, onClose, onLogin, currentSocket, adminPassword, workerPassword }: AuthModalProps) {
   const [authMode, setAuthMode] = useState<'login' | 'identify'>('identify')
   
   const [formData, setFormData] = useState({
@@ -59,15 +58,12 @@ export default function AuthModal({ isOpen, onClose, onLogin, currentSocket, adm
       return
     }
 
-    // Verificación optimista local si se proporcionan las contraseñas
-    if (adminPassword && superAdminPassword) {
-      const isSuperKey = trimmedData.password === superAdminPassword
-      // Check validation against dynamic admin password if provided, or hardcoded fallback if needed (though avoiding hardcode is the goal)
-      const isAdminKey = trimmedData.password === adminPassword
-
-      if (isSuperKey || isAdminKey) {
+    // Verificación local con contraseña dinámica configurada
+    if (adminPassword) {
+      if (trimmedData.password === adminPassword) {
         // Login exitoso localmente
-        const isSuperAdmin = isSuperKey
+        const isSuperAdmin = true // You are the admin for this deployment
+
         
         onLogin('admin', { 
           name: trimmedData.name, 
@@ -142,7 +138,7 @@ export default function AuthModal({ isOpen, onClose, onLogin, currentSocket, adm
     // Dynamic Verification: Use prop if available, otherwise fallback
     const correctWorkerPassword = workerPassword || 'Chirica001*';
     
-    if (password === correctWorkerPassword || password === 'Chiricapoz001*') {
+    if (password === correctWorkerPassword) {
       onLogin('worker', { name, lastName })
       onClose()
       setIsLoading(false)
