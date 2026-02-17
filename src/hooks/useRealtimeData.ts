@@ -64,6 +64,7 @@ export function useRealtimeData(userType: 'admin' | 'worker' = 'worker', userInf
   const [connectedUsers, setConnectedUsers] = useState<ConnectedUser[]>([])
   const [isConnected, setIsConnected] = useState(false)
   const [channel, setChannel] = useState<RealtimeChannel | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
 
   // Refs to keep track of latest user info inside callbacks without re-subscribing
   const userInfoRef = useRef(userInfo)
@@ -81,7 +82,7 @@ export function useRealtimeData(userType: 'admin' | 'worker' = 'worker', userInf
         fetch('/api/products'),
         fetch('/api/settings')
       ])
-      
+
       if (productsRes.ok && settingsRes.ok) {
         const [products, settings] = await Promise.all([
           productsRes.json(),
@@ -91,6 +92,8 @@ export function useRealtimeData(userType: 'admin' | 'worker' = 'worker', userInf
       }
     } catch (error) {
       console.error('Error loading data:', error)
+    } finally {
+      setIsLoading(false)
     }
   }, [])
 
@@ -106,14 +109,14 @@ export function useRealtimeData(userType: 'admin' | 'worker' = 'worker', userInf
       .on('presence', { event: 'sync' }, () => {
         const state = newChannel.presenceState()
         const uniqueUsers = new Map<string, ConnectedUser>()
-        
+
         // Transform presence state to ConnectedUser array with deduplication
         Object.keys(state).forEach(key => {
           state[key].forEach((presence: any) => {
             // Create a unique key based on user identity (Name + Lastname + Type)
             // This prevents duplicate entries when a user has multiple tabs open
             const identifier = `${presence.name || ''}-${presence.lastName || ''}-${presence.userType || ''}`.toLowerCase()
-            
+
             if (!uniqueUsers.has(identifier)) {
               uniqueUsers.set(identifier, {
                 id: key, // Use presence key as ID
@@ -127,7 +130,7 @@ export function useRealtimeData(userType: 'admin' | 'worker' = 'worker', userInf
             }
           })
         })
-        
+
         const users = Array.from(uniqueUsers.values())
         console.log('Supabase Presence Sync (Deduplicated):', users)
         setConnectedUsers(users)
@@ -137,69 +140,69 @@ export function useRealtimeData(userType: 'admin' | 'worker' = 'worker', userInf
         const currentType = userTypeRef.current
 
         // Check if I am the target (by Identity OR by Session ID)
-        const isIdentityMatch = 
-            payload.targetName && 
-            payload.targetName === currentInfo?.name &&
-            payload.targetLastName && 
-            payload.targetLastName === currentInfo?.lastName &&
-            payload.targetUserType === currentType;
-            
+        const isIdentityMatch =
+          payload.targetName &&
+          payload.targetName === currentInfo?.name &&
+          payload.targetLastName &&
+          payload.targetLastName === currentInfo?.lastName &&
+          payload.targetUserType === currentType;
+
         const isIdMatch = payload.targetId === sessionId;
 
         if (isIdentityMatch || isIdMatch) {
-           console.warn('You have been kicked!')
-           try { supabase.removeChannel(newChannel) } catch {}
-           localStorage.removeItem('user_type')
-           localStorage.removeItem('user_info')
-           // Clear app cookies
-           try {
-             document.cookie.split(';').forEach(c => {
-               const eq = c.indexOf('=')
-               const name = eq > -1 ? c.substring(0, eq).trim() : c.trim()
-               if (name) document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`
-             })
-           } catch {}
-           window.location.href = '/login'
+          console.warn('You have been kicked!')
+          try { supabase.removeChannel(newChannel) } catch { }
+          localStorage.removeItem('user_type')
+          localStorage.removeItem('user_info')
+          // Clear app cookies
+          try {
+            document.cookie.split(';').forEach(c => {
+              const eq = c.indexOf('=')
+              const name = eq > -1 ? c.substring(0, eq).trim() : c.trim()
+              if (name) document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`
+            })
+          } catch { }
+          window.location.href = '/login'
         }
       })
       .on('broadcast', { event: 'remove-admin' }, (payload) => {
-         const currentInfo = userInfoRef.current
-         
-         const isIdentityMatch = 
-            payload.targetName && 
-            payload.targetName === currentInfo?.name &&
-            payload.targetLastName && 
-            payload.targetLastName === currentInfo?.lastName;
-            
-         const isIdMatch = payload.targetId === sessionId;
+        const currentInfo = userInfoRef.current
 
-         if (isIdentityMatch || isIdMatch) {
-             console.warn('Admin privileges removed!')
-             try { supabase.removeChannel(newChannel) } catch {}
-             localStorage.removeItem('user_type')
-             localStorage.removeItem('user_info')
-             // Clear app cookies
-             try {
-               document.cookie.split(';').forEach(c => {
-                 const eq = c.indexOf('=')
-                 const name = eq > -1 ? c.substring(0, eq).trim() : c.trim()
-                 if (name) document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`
-               })
-             } catch {}
-             window.location.href = '/login'
-         }
+        const isIdentityMatch =
+          payload.targetName &&
+          payload.targetName === currentInfo?.name &&
+          payload.targetLastName &&
+          payload.targetLastName === currentInfo?.lastName;
+
+        const isIdMatch = payload.targetId === sessionId;
+
+        if (isIdentityMatch || isIdMatch) {
+          console.warn('Admin privileges removed!')
+          try { supabase.removeChannel(newChannel) } catch { }
+          localStorage.removeItem('user_type')
+          localStorage.removeItem('user_info')
+          // Clear app cookies
+          try {
+            document.cookie.split(';').forEach(c => {
+              const eq = c.indexOf('=')
+              const name = eq > -1 ? c.substring(0, eq).trim() : c.trim()
+              if (name) document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`
+            })
+          } catch { }
+          window.location.href = '/login'
+        }
       })
       .on('broadcast', { event: 'logout-user' }, (payload) => {
         const currentInfo = userInfoRef.current
         const currentType = userTypeRef.current
-        const isIdentityMatch = 
+        const isIdentityMatch =
           payload?.name === currentInfo?.name &&
           payload?.lastName === currentInfo?.lastName &&
           payload?.userType === currentType
         const isIdMatch = payload?.targetId === sessionId
         if (isIdentityMatch || isIdMatch) {
           console.warn('You have been logged out remotely')
-          try { supabase.removeChannel(newChannel) } catch {}
+          try { supabase.removeChannel(newChannel) } catch { }
           localStorage.removeItem('user_type')
           localStorage.removeItem('user_info')
           try {
@@ -208,7 +211,7 @@ export function useRealtimeData(userType: 'admin' | 'worker' = 'worker', userInf
               const name = eq > -1 ? c.substring(0, eq).trim() : c.trim()
               if (name) document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`
             })
-          } catch {}
+          } catch { }
           window.location.href = '/login'
         }
       })
@@ -224,7 +227,7 @@ export function useRealtimeData(userType: 'admin' | 'worker' = 'worker', userInf
         if (status === 'SUBSCRIBED') {
           console.log('Connected to Supabase Realtime')
           setIsConnected(true)
-          
+
           // Track user presence ONLY if we have valid credentials
           if (userInfo?.name && userInfo?.lastName) {
             const presenceData = {
@@ -267,48 +270,48 @@ export function useRealtimeData(userType: 'admin' | 'worker' = 'worker', userInf
             })
           }
         }
-        
+
         if (event === 'kick-user') {
-            const msgPayload = typeof payload === 'string' ? { targetId: payload } : payload
-            await newChannel.send({
-                type: 'broadcast',
-                event: 'kick-user',
-                payload: msgPayload
-            })
-            listeners['kick-success']?.forEach(cb => cb('Usuario expulsado correctamente'))
+          const msgPayload = typeof payload === 'string' ? { targetId: payload } : payload
+          await newChannel.send({
+            type: 'broadcast',
+            event: 'kick-user',
+            payload: msgPayload
+          })
+          listeners['kick-success']?.forEach(cb => cb('Usuario expulsado correctamente'))
         }
 
         if (event === 'remove-admin') {
-            const msgPayload = typeof payload === 'string' ? { targetId: payload } : payload
-            await newChannel.send({
-                type: 'broadcast',
-                event: 'remove-admin',
-                payload: msgPayload
-            })
-            listeners['remove-admin-success']?.forEach(cb => cb('Administrador removido correctamente'))
+          const msgPayload = typeof payload === 'string' ? { targetId: payload } : payload
+          await newChannel.send({
+            type: 'broadcast',
+            event: 'remove-admin',
+            payload: msgPayload
+          })
+          listeners['remove-admin-success']?.forEach(cb => cb('Administrador removido correctamente'))
         }
-        
+
         if (event === 'logout-user') {
-            const msgPayload = typeof payload === 'string' ? { targetId: payload } : payload
-            await newChannel.send({
-                type: 'broadcast',
-                event: 'logout-user',
-                payload: msgPayload
-            })
-            listeners['logout-success']?.forEach(cb => cb('Sesión cerrada correctamente'))
+          const msgPayload = typeof payload === 'string' ? { targetId: payload } : payload
+          await newChannel.send({
+            type: 'broadcast',
+            event: 'logout-user',
+            payload: msgPayload
+          })
+          listeners['logout-success']?.forEach(cb => cb('Sesión cerrada correctamente'))
         }
 
         // 'request-user-list' is handled automatically by presence sync
 
         // Mock Login Responses (since AuthModal falls through to here on failure)
         if (event === 'worker-login' || event === 'admin-login') {
-            const isWorker = event === 'worker-login'
-            setTimeout(() => {
-                const errorEvent = isWorker ? 'worker-login-error' : 'admin-login-error'
-                if (listeners[errorEvent]) {
-                    listeners[errorEvent].forEach(cb => cb('Credenciales inválidas'))
-                }
-            }, 500)
+          const isWorker = event === 'worker-login'
+          setTimeout(() => {
+            const errorEvent = isWorker ? 'worker-login-error' : 'admin-login-error'
+            if (listeners[errorEvent]) {
+              listeners[errorEvent].forEach(cb => cb('Credenciales inválidas'))
+            }
+          }, 500)
         }
       },
       on: (event: string, cb: any) => {
@@ -316,13 +319,13 @@ export function useRealtimeData(userType: 'admin' | 'worker' = 'worker', userInf
         listeners[event].push(cb)
       },
       off: (event: string, cb?: any) => {
-         if (listeners[event]) {
-             if (cb) {
-                 listeners[event] = listeners[event].filter(l => l !== cb)
-             } else {
-                 delete listeners[event]
-             }
-         }
+        if (listeners[event]) {
+          if (cb) {
+            listeners[event] = listeners[event].filter(l => l !== cb)
+          } else {
+            delete listeners[event]
+          }
+        }
       },
       once: (event: string, cb: any) => {
         const wrapper = (...args: any[]) => {
@@ -338,7 +341,7 @@ export function useRealtimeData(userType: 'admin' | 'worker' = 'worker', userInf
         supabase.removeChannel(newChannel)
       }
     }
-    
+
     setSocket(mockSocket)
 
     return () => {
@@ -350,9 +353,9 @@ export function useRealtimeData(userType: 'admin' | 'worker' = 'worker', userInf
   // Effect to update presence when user info changes
   useEffect(() => {
     if (channel && isConnected && userInfo?.name && userInfo?.lastName) {
-       // Update presence track with new info
-       const sessionId = socket?.id || 'unknown'
-       channel.track({
+      // Update presence track with new info
+      const sessionId = socket?.id || 'unknown'
+      channel.track({
         socketId: sessionId,
         userType,
         name: userInfo.name,
@@ -375,6 +378,7 @@ export function useRealtimeData(userType: 'admin' | 'worker' = 'worker', userInf
     data,
     connectedUsers,
     isConnected,
-    updateData
+    updateData,
+    isLoading
   }
 }

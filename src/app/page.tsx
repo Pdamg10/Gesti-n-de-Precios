@@ -1,11 +1,14 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import dynamic from "next/dynamic";
 import { Virtuoso } from "react-virtuoso";
-import ExcelImport from "@/components/ExcelImport";
-import PdfImportExport from "@/components/PdfImportExport";
-import AuthModal from "@/components/AuthModal";
-import AdminPanel from "@/components/AdminPanel";
+
+const ExcelImport = dynamic(() => import("@/components/ExcelImport"), { ssr: false });
+const PdfImportExport = dynamic(() => import("@/components/PdfImportExport"), { ssr: false });
+const AuthModal = dynamic(() => import("@/components/AuthModal"), { ssr: false });
+const AdminPanel = dynamic(() => import("@/components/AdminPanel"), { ssr: false });
+
 import ProductRow from "@/components/ProductRow";
 import MobileProductCard from "@/components/MobileProductCard";
 import { useRealtimeData } from "@/hooks/useRealtimeData";
@@ -74,6 +77,7 @@ export default function Home() {
     connectedUsers,
     updateData,
     socket,
+    isLoading,
   } = useRealtimeData(
     isAdmin || isWorker ? (isAdmin ? "admin" : "worker") : "worker",
     currentUser,
@@ -126,7 +130,7 @@ export default function Home() {
     },
     { key: "divisas", label: "Divisas ($)", base: "usd", applyTax: false },
     { key: "custom", label: "Divisas en Fisico", base: "usd", applyTax: false },
-    { key: "pagoMovil", label: "Pago Móvil ($)", base: "usd", applyTax: false },
+    { key: "pagoMovil", label: "Pago Móvil (Bs)", base: "bs", applyTax: false },
   ]);
   const [newColumnName, setNewColumnName] = useState("");
   const [newColumnPercentage, setNewColumnPercentage] = useState("");
@@ -199,7 +203,8 @@ export default function Home() {
   });
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [passwordMessage, setPasswordMessage] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+
   const [adminAccordionValue, setAdminAccordionValue] = useState<
     string | undefined
   >(() => {
@@ -210,7 +215,7 @@ export default function Home() {
   });
 
   const ADMIN_PASSWORD = "Chirica001*";
-  
+
   // Dynamic Passwords State
   const [adminPassword, setAdminPassword] = useState(ADMIN_PASSWORD);
   const [workerPassword, setWorkerPassword] = useState(ADMIN_PASSWORD); // Fallback init
@@ -308,56 +313,56 @@ export default function Home() {
     // Load default adjustments
     // Logic update: Prioritize GLOBAL defaults to enforce specific unification
     const defaults = { ...defaultAdjustments };
-    
+
     // Check for global setting first
     const globalAdjSetting = settingsData.find(s => s.settingKey === 'default_adj_global');
     let globalDefaults: any = null;
-    
+
     if (globalAdjSetting && globalAdjSetting.settingValue) {
-        try {
-            globalDefaults = JSON.parse(globalAdjSetting.settingValue);
-        } catch (e) {
-            console.error("Error parsing global defaults", e);
-        }
+      try {
+        globalDefaults = JSON.parse(globalAdjSetting.settingValue);
+      } catch (e) {
+        console.error("Error parsing global defaults", e);
+      }
     } else {
-        // Migration Strategy: If no global setting exists, use 'cauchos' as the source of truth
-        // (Since the user likely configured it there first)
-        const cauchosSetting = settingsData.find(s => s.settingKey === 'default_adj_cauchos');
-        if (cauchosSetting && cauchosSetting.settingValue) {
-             try {
-                globalDefaults = JSON.parse(cauchosSetting.settingValue);
-                // We could optionally save this to default_adj_global immediately, 
-                // but setting the state is enough for the session.
-            } catch (e) {
-                console.error("Error parsing cauchos defaults for migration", e);
-            }
+      // Migration Strategy: If no global setting exists, use 'cauchos' as the source of truth
+      // (Since the user likely configured it there first)
+      const cauchosSetting = settingsData.find(s => s.settingKey === 'default_adj_cauchos');
+      if (cauchosSetting && cauchosSetting.settingValue) {
+        try {
+          globalDefaults = JSON.parse(cauchosSetting.settingValue);
+          // We could optionally save this to default_adj_global immediately, 
+          // but setting the state is enough for the session.
+        } catch (e) {
+          console.error("Error parsing cauchos defaults for migration", e);
         }
+      }
     }
 
     ["cauchos", "baterias", ...customLists.map((l) => l.id)].forEach(
       (listType: string) => {
         // If global/inferred defaults exist, use them for EVERYTHING
         if (globalDefaults) {
-             defaults[listType] = {
-              ...defaults[listType],
-              ...globalDefaults
-            };
+          defaults[listType] = {
+            ...defaults[listType],
+            ...globalDefaults
+          };
         } else {
-            // Fallback: Legacy per-list settings (only if no global and no cauchos source found)
-            const adjSetting = settingsData.find(
-              (s) => s.settingKey === `default_adj_${listType}`,
-            );
-            if (adjSetting && adjSetting.settingValue) {
-              try {
-                const parsed = JSON.parse(adjSetting.settingValue);
-                defaults[listType] = {
-                  ...defaults[listType],
-                  ...parsed 
-                };
-              } catch (e) {
-                console.error("Error parsing default adjustments", e);
-              }
+          // Fallback: Legacy per-list settings (only if no global and no cauchos source found)
+          const adjSetting = settingsData.find(
+            (s) => s.settingKey === `default_adj_${listType}`,
+          );
+          if (adjSetting && adjSetting.settingValue) {
+            try {
+              const parsed = JSON.parse(adjSetting.settingValue);
+              defaults[listType] = {
+                ...defaults[listType],
+                ...parsed
+              };
+            } catch (e) {
+              console.error("Error parsing default adjustments", e);
             }
+          }
         }
       },
     );
@@ -431,45 +436,45 @@ export default function Home() {
     // Load Passwords
     const adminPassSetting = settingsData.find(s => s.settingKey === 'admin_password');
     if (adminPassSetting && adminPassSetting.settingValue) {
-        setAdminPassword(adminPassSetting.settingValue);
+      setAdminPassword(adminPassSetting.settingValue);
     } else {
-        setAdminPassword(ADMIN_PASSWORD);
+      setAdminPassword(ADMIN_PASSWORD);
     }
-    
+
     const workerPassSetting = settingsData.find(s => s.settingKey === 'worker_password');
     if (workerPassSetting && workerPassSetting.settingValue) {
-        setWorkerPassword(workerPassSetting.settingValue);
+      setWorkerPassword(workerPassSetting.settingValue);
     } else {
-        setWorkerPassword(ADMIN_PASSWORD); // Default worker same as basic admin or specific default
+      setWorkerPassword(ADMIN_PASSWORD); // Default worker same as basic admin or specific default
     }
   };
 
   const changePassword = async (newPassword: string) => {
     try {
-        const key = passwordModalType === 'admin' ? 'admin_password' : 'worker_password';
-        
-        await fetch('/api/settings', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                settingKey: key,
-                settingValue: newPassword
-            })
-        });
+      const key = passwordModalType === 'admin' ? 'admin_password' : 'worker_password';
 
-        if (passwordModalType === 'admin') {
-            setAdminPassword(newPassword);
-        } else {
-            setWorkerPassword(newPassword);
-        }
+      await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          settingKey: key,
+          settingValue: newPassword
+        })
+      });
 
-        showAlert(`Contraseña de ${passwordModalType === 'admin' ? 'Administrador' : 'Trabajador'} actualizada correctamente`, "Éxito");
-        setShowPasswordModal(false);
-        setPasswordForm({ currentPassword: '', newPassword: '' });
-        
+      if (passwordModalType === 'admin') {
+        setAdminPassword(newPassword);
+      } else {
+        setWorkerPassword(newPassword);
+      }
+
+      showAlert(`Contraseña de ${passwordModalType === 'admin' ? 'Administrador' : 'Trabajador'} actualizada correctamente`, "Éxito");
+      setShowPasswordModal(false);
+      setPasswordForm({ currentPassword: '', newPassword: '' });
+
     } catch (error) {
-        console.error("Error changing password", error);
-        showAlert("Error al actualizar la contraseña", "Error");
+      console.error("Error changing password", error);
+      showAlert("Error al actualizar la contraseña", "Error");
     }
   };
 
@@ -491,7 +496,7 @@ export default function Home() {
           userType,
         });
       }
-    } catch {}
+    } catch { }
   };
 
   const handleLogout = () => {
@@ -512,7 +517,7 @@ export default function Home() {
         });
         socket.close();
       }
-    } catch {}
+    } catch { }
     try {
       document.cookie.split(";").forEach((c) => {
         const eq = c.indexOf("=");
@@ -520,7 +525,7 @@ export default function Home() {
         if (name)
           document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
       });
-    } catch {}
+    } catch { }
     window.location.href = "/login";
   };
 
@@ -613,7 +618,7 @@ export default function Home() {
 
   const handleBackup = async () => {
     try {
-      setIsLoading(true);
+      setIsProcessing(true);
       const [productsRes, settingsRes] = await Promise.all([
         fetch("/api/products"),
         fetch("/api/settings"),
@@ -641,7 +646,7 @@ export default function Home() {
       console.error("Error creating backup:", error);
       showAlert("Error al crear la copia de seguridad", "Error");
     } finally {
-      setIsLoading(false);
+      setIsProcessing(false);
     }
   };
 
@@ -665,7 +670,7 @@ export default function Home() {
       return;
     }
     try {
-      setIsLoading(true);
+      setIsProcessing(true);
       const text = await file.text();
       const backupData = JSON.parse(text);
       if (!backupData.products || !backupData.settings) {
@@ -690,7 +695,7 @@ export default function Home() {
         "Error",
       );
     } finally {
-      setIsLoading(false);
+      setIsProcessing(false);
       event.target.value = "";
     }
   };
@@ -714,19 +719,19 @@ export default function Home() {
       // Update Default Adjustments State GLOBALLY (for all tabs)
       const newDefaultState = { ...defaultAdjustments };
       const allTabs = Object.keys(newDefaultState);
-      
+
       allTabs.forEach(tab => {
-          const currentDefaults = newDefaultState[tab] || {
-            cashea: 0,
-            transferencia: 0,
-            divisas: 0,
-            custom: 0,
-            pagoMovil: 0
-          };
-          newDefaultState[tab] = {
-            ...currentDefaults,
-            [type]: (currentDefaults[type] || 0) + delta
-          };
+        const currentDefaults = newDefaultState[tab] || {
+          cashea: 0,
+          transferencia: 0,
+          divisas: 0,
+          custom: 0,
+          pagoMovil: 0
+        };
+        newDefaultState[tab] = {
+          ...currentDefaults,
+          [type]: (currentDefaults[type] || 0) + delta
+        };
       });
 
       setDefaultAdjustments(newDefaultState);
@@ -734,65 +739,65 @@ export default function Home() {
       // Reset Local Adjustment State
       const newLocals = { ...localAdjustments };
       if (newLocals[activeTab]) {
-         newLocals[activeTab] = { ...newLocals[activeTab], [type]: "" };
+        newLocals[activeTab] = { ...newLocals[activeTab], [type]: "" };
       }
       setLocalAdjustments(newLocals);
 
       // Update Products State (Apply delta to ALL products regardless of type)
       // Only if it's NOT a discount
       const isDiscount = type.includes("_discount");
-      
+
       if (!isDiscount) {
-          setProducts((prevProducts) =>
-            prevProducts.map((p) => {
-              // Apply to ALL products
-              // Construct the key like adjustmentCashea
-              const key = `adjustment${type.charAt(0).toUpperCase() + type.slice(1)}`;
-              const currentVal = (p as any)[key];
-    
-              const newVal = (currentVal || 0) + delta;
-              return { ...p, [key]: newVal };
-            }),
-          );
+        setProducts((prevProducts) =>
+          prevProducts.map((p) => {
+            // Apply to ALL products
+            // Construct the key like adjustmentCashea
+            const key = `adjustment${type.charAt(0).toUpperCase() + type.slice(1)}`;
+            const currentVal = (p as any)[key];
+
+            const newVal = (currentVal || 0) + delta;
+            return { ...p, [key]: newVal };
+          }),
+        );
       }
 
       // 2. Background API Calls
       // Calculate the NEW global value based on the active tab (assuming they are synced, this is the new truth)
       const currentVal = defaultAdjustments[activeTab]?.[type] || 0;
       const newGlobalVal = currentVal + delta;
-      
+
       // We save a "Global" settings object. 
       // We need to fetch the current global object first? 
       // Or we can just use the new state from one of the tabs as the source of truth.
       const sourceOfTruth = newDefaultState[activeTab] || {};
 
       const promises = [
-          // Update GLOBAL Default Adjustments
-          fetch(`/api/settings/default_adj_global`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ settingValue: JSON.stringify(sourceOfTruth) }),
-          }),
+        // Update GLOBAL Default Adjustments
+        fetch(`/api/settings/default_adj_global`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ settingValue: JSON.stringify(sourceOfTruth) }),
+        }),
       ];
-      
+
       // Update products (Batch) - Call for ALL types to ensure backend updates everything
       // We can iterate over known types
       if (!isDiscount) {
-          const typesToUpdate = ["cauchos", "baterias", ...customLists.map(c => c.id)];
-          typesToUpdate.forEach(t => {
-             promises.push(
-                fetch("/api/products/batch-update", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    type: t,
-                    adjustments: { [type]: delta },
-                  }),
-                })
-             );
-          });
+        const typesToUpdate = ["cauchos", "baterias", ...customLists.map(c => c.id)];
+        typesToUpdate.forEach(t => {
+          promises.push(
+            fetch("/api/products/batch-update", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                type: t,
+                adjustments: { [type]: delta },
+              }),
+            })
+          );
+        });
       }
-      
+
       await Promise.all(promises);
 
 
@@ -821,20 +826,20 @@ export default function Home() {
       // Use current defaults of active tab as a base, but we will apply to ALL
       const currentDefaults = defaultAdjustments[activeTab] || {};
       const newDefaults = { ...currentDefaults };
-      
+
       // Only reset keys that are explicitly discounts
       Object.keys(newDefaults).forEach((key) => {
         if (key.endsWith('_discount')) {
           newDefaults[key] = 0;
         }
       });
-      
+
       // Update ALL tabs in state
       const newDefaultState = { ...defaultAdjustments };
       Object.keys(newDefaultState).forEach(tab => {
-          // Merge with existing tab defaults in case they have unique keys (unlikely now)
-          // Actually, we enforce uniformity, so we can just set them equal
-          newDefaultState[tab] = { ...newDefaults };
+        // Merge with existing tab defaults in case they have unique keys (unlikely now)
+        // Actually, we enforce uniformity, so we can just set them equal
+        newDefaultState[tab] = { ...newDefaults };
       });
       setDefaultAdjustments(newDefaultState);
 
@@ -848,11 +853,11 @@ export default function Home() {
       // Clear local adjustments state for ALL tabs
       const newLocals = { ...localAdjustments };
       Object.keys(newLocals).forEach(tab => {
-          if (newLocals[tab]) {
-            Object.keys(newLocals[tab]).forEach((key) => {
-              newLocals[tab][key] = "";
-            });
-          }
+        if (newLocals[tab]) {
+          Object.keys(newLocals[tab]).forEach((key) => {
+            newLocals[tab][key] = "";
+          });
+        }
       });
       setLocalAdjustments(newLocals);
 
@@ -904,7 +909,7 @@ export default function Home() {
       // Standard mapping: We DO NOT set individual adjustments on creation.
       // This ensures the product inherits the GLOBAL (Dynamic) adjustment by default.
       // If we set it here, it becomes a fixed snapshot and won't update when global changes.
-      
+
       // payload.adjustmentCashea = ... (REMOVED)
 
       // For any other custom columns, we might need to handle them if the backend supports dynamic columns
@@ -1222,7 +1227,7 @@ export default function Home() {
       // Si es 0, no modifica el precio (se mantiene la base)
       let priceAfterAdj = basePrice;
       if (adjustment !== 0) {
-          priceAfterAdj = basePrice * (adjustment / 100);
+        priceAfterAdj = basePrice * (adjustment / 100);
       }
 
       // 2. Aplicar Impuesto (IVA) si corresponde
@@ -1275,7 +1280,7 @@ export default function Home() {
     const key =
       newColumnName.toLowerCase().replace(/[^a-z0-9]/g, "") +
       Date.now().toString().slice(-4);
-    
+
     // Configuración forzada: siempre base USD y sin aplicar Tax por defecto (ajustable)
     const newCol = {
       key,
@@ -1288,7 +1293,7 @@ export default function Home() {
     // 1. Optimistic Update
     setPriceColumns(newColumns);
     setNewColumnName("");
-    setNewColumnPercentage(""); 
+    setNewColumnPercentage("");
     setIsManagingColumns(false);
 
     // Initialize adjustments for new column
@@ -1301,7 +1306,7 @@ export default function Home() {
       (listType) => {
         if (!newLocals[listType]) newLocals[listType] = {};
         newLocals[listType][key] = "";
-        
+
         if (!newDefaults[listType]) newDefaults[listType] = {};
         newDefaults[listType][key] = initialPct;
       },
@@ -1313,7 +1318,7 @@ export default function Home() {
     try {
       // 2. Persist to DB
       const promises: Promise<Response>[] = [];
-      
+
       // Update Columns
       promises.push(fetch("/api/settings/price_columns", {
         method: "PUT",
@@ -1324,11 +1329,11 @@ export default function Home() {
       // Update Default Adjustments for ALL lists (to save the initial percentage)
       if (initialPct !== 0) {
         listTypes.forEach(listType => {
-           promises.push(fetch(`/api/settings/default_adj_${listType}`, {
+          promises.push(fetch(`/api/settings/default_adj_${listType}`, {
             method: "PUT",
-             headers: { "Content-Type": "application/json" },
-             body: JSON.stringify({ settingValue: JSON.stringify(newDefaults[listType]) }),
-           }));
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ settingValue: JSON.stringify(newDefaults[listType]) }),
+          }));
         });
       }
 
@@ -1424,7 +1429,7 @@ export default function Home() {
         ? { ...col, label: newLabel, applyTax: newApplyTax }
         : col,
     );
-    
+
     // 2. Update Default Adjustments (Percentage)
     const pctVal = parseFloat(newPct.toString()) || 0;
     const newDefaults = { ...defaultAdjustments };
@@ -1432,10 +1437,10 @@ export default function Home() {
     newDefaults[activeTab][key] = pctVal;
 
     try {
-        // Optimistic
-        setPriceColumns(newColumns);
-        setDefaultAdjustments(newDefaults);
-        setEditingColumn(null);
+      // Optimistic
+      setPriceColumns(newColumns);
+      setDefaultAdjustments(newDefaults);
+      setEditingColumn(null);
 
       // Save Columns
       const p1 = fetch("/api/settings/price_columns", {
@@ -1443,7 +1448,7 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ settingValue: JSON.stringify(newColumns) }),
       });
-      
+
       // Save Adjustments (Active Tab)
       const p2 = fetch(`/api/settings/default_adj_${activeTab}`, {
         method: "PUT",
@@ -1464,7 +1469,7 @@ export default function Home() {
   const tempGlobalDiscounts = priceColumns.reduce((acc, col) => {
     acc[col.key] = defaultAdjustments[activeTab]?.[`${col.key}_discount`] || 0;
     // Also map base currency for backward compat if needed
-    if (!acc[col.base || 'usd']) acc[col.base || 'usd'] = 0; 
+    if (!acc[col.base || 'usd']) acc[col.base || 'usd'] = 0;
     return acc;
   }, {} as any);
 
@@ -1559,7 +1564,7 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`,
   const applyAllPaymentAdjustments = async () => {
     const adjustments = localAdjustments[activeTab] || {};
     const keysToApply = Object.keys(adjustments).filter(
-        k => adjustments[k] !== "" && adjustments[k] !== 0 && adjustments[k] !== undefined
+      k => adjustments[k] !== "" && adjustments[k] !== 0 && adjustments[k] !== undefined
     );
 
     if (keysToApply.length === 0) {
@@ -1572,25 +1577,25 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`,
     // Since we now unify, we update ALL tabs with the SAME modifications
     const newDefaultState = { ...defaultAdjustments };
     const allTabs = Object.keys(newDefaultState);
-    
+
     // We need a base to work from. Use activeTab as source of truth.
     // Copy it to avoid mutating original state in place during calculation
     const baseDefaultsSource = { ...(newDefaultState[activeTab] || {}) };
-    
+
     // Accumulate all deltas into baseDefaultsSource
     const accumulatedDeltas: Record<string, number> = {};
-    
+
     keysToApply.forEach(key => {
-        const delta = parseFloat(adjustments[key]);
-        baseDefaultsSource[key] = (baseDefaultsSource[key] || 0) + delta;
-        accumulatedDeltas[key] = delta;
+      const delta = parseFloat(adjustments[key]);
+      baseDefaultsSource[key] = (baseDefaultsSource[key] || 0) + delta;
+      accumulatedDeltas[key] = delta;
     });
 
     // Now propagate this NEW source of truth to ALL tabs
     allTabs.forEach(tab => {
-        // We override the tab's defaults with the calculated base
-        // (This enforces strict synchronization)
-        newDefaultState[tab] = { ...baseDefaultsSource };
+      // We override the tab's defaults with the calculated base
+      // (This enforces strict synchronization)
+      newDefaultState[tab] = { ...baseDefaultsSource };
     });
 
     // 2. Optimistic Update: Default Adjustments
@@ -1601,74 +1606,74 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`,
     // Clear in active tab (and others if we want to sync clear, but local can be disparate)
     // Let's clear in active tab
     if (newLocals[activeTab]) {
-         keysToApply.forEach(key => {
-             newLocals[activeTab][key] = "";
-         });
+      keysToApply.forEach(key => {
+        newLocals[activeTab][key] = "";
+      });
     }
     setLocalAdjustments(newLocals);
 
     // 4. Optimistic Update: Products
     // Apply deltas to ALL products
     setProducts((prevProducts) =>
-        prevProducts.map((p) => {
-             let newP = { ...p };
-             keysToApply.forEach(key => {
-                 // Skip if it's a discount (discounts are config-only)
-                 if (key.includes("_discount")) return;
-                 
-                 const delta = accumulatedDeltas[key];
-                 const propKey = `adjustment${key.charAt(0).toUpperCase() + key.slice(1)}`;
-                 const currentVal = (newP as any)[propKey];
-                 newP = { ...newP, [propKey]: (currentVal || 0) + delta };
-             });
-             return newP;
-        })
+      prevProducts.map((p) => {
+        let newP = { ...p };
+        keysToApply.forEach(key => {
+          // Skip if it's a discount (discounts are config-only)
+          if (key.includes("_discount")) return;
+
+          const delta = accumulatedDeltas[key];
+          const propKey = `adjustment${key.charAt(0).toUpperCase() + key.slice(1)}`;
+          const currentVal = (newP as any)[propKey];
+          newP = { ...newP, [propKey]: (currentVal || 0) + delta };
+        });
+        return newP;
+      })
     );
 
     // 5. API Calls
     try {
-        const promises: Promise<Response>[] = [];
-        
-        // A. Save Settings (Global)
-        promises.push(
-            fetch(`/api/settings/default_adj_global`, {
-                method: "PUT",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ settingValue: JSON.stringify(baseDefaultsSource) }),
-            })
-        );
-        
-        // B. Update Products (Batch)
-        // We iterate over keys and known types to broadcast updates
-        const nonDiscountKeys = keysToApply.filter(k => !k.includes("_discount"));
-        
-        if (nonDiscountKeys.length > 0) {
-            const typesToUpdate = ["cauchos", "baterias", ...customLists.map(c => c.id)];
-            
-            nonDiscountKeys.forEach(key => {
-                const delta = accumulatedDeltas[key];
-                 typesToUpdate.forEach(t => {
-                     promises.push(
-                        fetch("/api/products/batch-update", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({
-                            type: t,
-                            adjustments: { [key]: delta },
-                          }),
-                        })
-                     );
-                  });
-            });
-        }
+      const promises: Promise<Response>[] = [];
 
-        await Promise.all(promises);
-        showAlert(`Se han aplicado ${keysToApply.length} ajustes correctamente`, "Éxito");
-        
+      // A. Save Settings (Global)
+      promises.push(
+        fetch(`/api/settings/default_adj_global`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ settingValue: JSON.stringify(baseDefaultsSource) }),
+        })
+      );
+
+      // B. Update Products (Batch)
+      // We iterate over keys and known types to broadcast updates
+      const nonDiscountKeys = keysToApply.filter(k => !k.includes("_discount"));
+
+      if (nonDiscountKeys.length > 0) {
+        const typesToUpdate = ["cauchos", "baterias", ...customLists.map(c => c.id)];
+
+        nonDiscountKeys.forEach(key => {
+          const delta = accumulatedDeltas[key];
+          typesToUpdate.forEach(t => {
+            promises.push(
+              fetch("/api/products/batch-update", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  type: t,
+                  adjustments: { [key]: delta },
+                }),
+              })
+            );
+          });
+        });
+      }
+
+      await Promise.all(promises);
+      showAlert(`Se han aplicado ${keysToApply.length} ajustes correctamente`, "Éxito");
+
     } catch (error) {
-        console.error("Error batch applying adjustments:", error);
-        refreshData(); // Sync
-        showAlert("Error al aplicar ajustes", "Error");
+      console.error("Error batch applying adjustments:", error);
+      refreshData(); // Sync
+      showAlert("Error al aplicar ajustes", "Error");
     }
   };
 
@@ -1706,9 +1711,9 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`,
         const newUsd =
           adjUsd !== 0
             ? Math.max(
-                0,
-                roundToNearest5(p.precioListaUsd * (1 + adjUsd / 100)),
-              )
+              0,
+              roundToNearest5(p.precioListaUsd * (1 + adjUsd / 100)),
+            )
             : p.precioListaUsd;
 
         return { ...p, precioListaBs: newBs, precioListaUsd: newUsd };
@@ -1747,6 +1752,19 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`,
 
   return (
     <div className="min-h-screen gradient-bg text-white p-2 md:p-6">
+      {/* BCV Rate Display - Fixed Top Left */}
+      <div className="fixed top-4 left-4 z-40 card-glass px-3 py-1.5 md:px-4 md:py-2 rounded-xl flex items-center gap-2 md:gap-3 border border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.1)] hover:bg-white/10 transition-all">
+        <div className="w-6 h-6 md:w-8 md:h-8 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400">
+          <span className="text-sm md:text-lg font-bold">Bs</span>
+        </div>
+        <div className="flex flex-col">
+          <span className="text-[8px] md:text-[10px] text-gray-400 uppercase tracking-wider font-semibold">Tasa BCV</span>
+          <span className="text-sm md:text-xl font-bold text-white leading-none">
+            {exchangeRate.toFixed(2)}
+          </span>
+        </div>
+      </div>
+
       {/* Header */}
       <header className="text-center mb-8 pt-4">
         <div className="flex items-center justify-center gap-2 mb-2 scale-100 transition-transform">
@@ -1818,21 +1836,19 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`,
         <div className="flex justify-center gap-3 mt-8 flex-wrap items-center">
           <button
             onClick={() => setActiveTab("cauchos")}
-            className={`h-10 md:h-12 px-3 md:px-6 rounded-lg font-bold tracking-wide uppercase transition-all shadow-lg flex items-center justify-center min-w-[110px] md:min-w-[140px] text-xs md:text-base ${
-              activeTab === "cauchos"
-                ? "bg-red-600 text-white border border-red-500 shadow-red-900/50 scale-[1.02]"
-                : "bg-black/40 text-gray-300 hover:bg-white/10 hover:text-white border border-white/5"
-            }`}
+            className={`h-10 md:h-12 px-3 md:px-6 rounded-lg font-bold tracking-wide uppercase transition-all shadow-lg flex items-center justify-center min-w-[110px] md:min-w-[140px] text-xs md:text-base ${activeTab === "cauchos"
+              ? "bg-red-600 text-white border border-red-500 shadow-red-900/50 scale-[1.02]"
+              : "bg-black/40 text-gray-300 hover:bg-white/10 hover:text-white border border-white/5"
+              }`}
           >
             🚗 Cauchos
           </button>
           <button
             onClick={() => setActiveTab("baterias")}
-            className={`h-10 md:h-12 px-3 md:px-6 rounded-lg font-bold tracking-wide uppercase transition-all shadow-lg flex items-center justify-center min-w-[110px] md:min-w-[140px] text-xs md:text-base ${
-              activeTab === "baterias"
-                ? "bg-red-600 text-white border border-red-500 shadow-red-900/50 scale-[1.02]"
-                : "bg-black/40 text-gray-300 hover:bg-white/10 hover:text-white border border-white/5"
-            }`}
+            className={`h-10 md:h-12 px-3 md:px-6 rounded-lg font-bold tracking-wide uppercase transition-all shadow-lg flex items-center justify-center min-w-[110px] md:min-w-[140px] text-xs md:text-base ${activeTab === "baterias"
+              ? "bg-red-600 text-white border border-red-500 shadow-red-900/50 scale-[1.02]"
+              : "bg-black/40 text-gray-300 hover:bg-white/10 hover:text-white border border-white/5"
+              }`}
           >
             🔋 Baterías
           </button>
@@ -2097,11 +2113,10 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`,
                               />
                               <label
                                 htmlFor="restore-file-input"
-                                className={`w-full md:w-auto inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium text-white transition-all shadow-lg cursor-pointer ${
-                                  isLoading
-                                    ? "bg-gray-600 cursor-not-allowed"
-                                    : "bg-red-600 hover:bg-red-500"
-                                }`}
+                                className={`w-full md:w-auto inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium text-white transition-all shadow-lg cursor-pointer ${isProcessing
+                                  ? "bg-gray-600 cursor-not-allowed"
+                                  : "bg-red-600 hover:bg-red-500"
+                                  }`}
                               >
                                 <svg
                                   className="w-5 h-5"
@@ -2116,7 +2131,7 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`,
                                     d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
                                   />
                                 </svg>
-                                {isLoading
+                                {isProcessing
                                   ? "Procesando..."
                                   : "Subir y Restaurar (JSON)"}
                               </label>
@@ -2163,7 +2178,7 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`,
                         </div>
 
 
-                        
+
                         <div className="md:col-span-2">
                           <h3 className="text-sm text-gray-400 mb-2">
                             Aplicar IVA a Columnas:
@@ -2180,11 +2195,10 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`,
                                   );
                                   setPriceColumns(updated);
                                 }}
-                                className={`cursor-pointer p-2 rounded-lg border transition-all text-center select-none flex items-center justify-center ${
-                                  col.applyTax
-                                    ? "bg-red-600 border-red-500 text-white shadow-lg shadow-red-900/50"
-                                    : "bg-black/20 border-white/5 text-gray-400 hover:border-white/10 hover:bg-white/5"
-                                }`}
+                                className={`cursor-pointer p-2 rounded-lg border transition-all text-center select-none flex items-center justify-center ${col.applyTax
+                                  ? "bg-red-600 border-red-500 text-white shadow-lg shadow-red-900/50"
+                                  : "bg-black/20 border-white/5 text-gray-400 hover:border-white/10 hover:bg-white/5"
+                                  }`}
                               >
                                 <span className="text-xs font-bold tracking-wide">
                                   {col.label}
@@ -2219,9 +2233,9 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`,
 
                         <div className="md:col-span-2 mb-4 border-t border-white/10 pt-4">
                           <h3 className="text-sm text-gray-400 mb-2">
-                             Diferencial Cambiario:
+                            Diferencial Cambiario:
                           </h3>
-                             <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
+                          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
                             {priceColumns.map((col) => (
                               <div key={col.key} className="bg-black/20 p-2 rounded-lg border border-white/5">
                                 <label className="block text-xs text-gray-400 mb-1 truncate" title={col.label}>
@@ -2236,14 +2250,14 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`,
                                         : defaultAdjustments[activeTab]?.[col.key]
                                     }
                                     onChange={(e) => {
-                                       const val = e.target.value === "" ? 0 : parseFloat(e.target.value);
-                                       setDefaultAdjustments(prev => {
-                                           const newDefaults = { ...prev };
-                                           // Deep copy the active tab object to ensure React detects the change
-                                           newDefaults[activeTab] = { ...(newDefaults[activeTab] || {}) };
-                                           newDefaults[activeTab][col.key] = val;
-                                           return newDefaults;
-                                       });
+                                      const val = e.target.value === "" ? 0 : parseFloat(e.target.value);
+                                      setDefaultAdjustments(prev => {
+                                        const newDefaults = { ...prev };
+                                        // Deep copy the active tab object to ensure React detects the change
+                                        newDefaults[activeTab] = { ...(newDefaults[activeTab] || {}) };
+                                        newDefaults[activeTab][col.key] = val;
+                                        return newDefaults;
+                                      });
                                     }}
                                     className="input-dark rounded px-2 py-1 w-full text-white text-sm text-center"
                                     placeholder="0"
@@ -2253,7 +2267,7 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`,
                               </div>
                             ))}
                           </div>
-                          
+
                           <div className="flex gap-3 items-center">
                             <button
                               onClick={async () => {
@@ -2277,9 +2291,9 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`,
                               onClick={() => {
                                 const newDefaults = { ...defaultAdjustments };
                                 if (newDefaults[activeTab]) {
-                                   Object.keys(newDefaults[activeTab]).forEach(key => {
-                                       newDefaults[activeTab][key] = 0;
-                                   });
+                                  Object.keys(newDefaults[activeTab]).forEach(key => {
+                                    newDefaults[activeTab][key] = 0;
+                                  });
                                 }
                                 setDefaultAdjustments(newDefaults);
                               }}
@@ -2493,22 +2507,22 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`,
                                   key={key}
                                   className="card-glass rounded-lg p-4 bg-black/20"
                                 >
-                                    <div className="flex items-center justify-between mb-3">
-                                      <div className="flex items-center gap-2">
-                                        <label
-                                          className="block text-sm font-bold text-gray-300 truncate"
-                                          title={label}
-                                        >
-                                          {label}
-                                        </label>
-                                      </div>
-                                      <span
-                                        className={`text-sm font-bold ${currentGlobal > 0 ? "text-green-400" : currentGlobal < 0 ? "text-red-400" : "text-gray-500"}`}
+                                  <div className="flex items-center justify-between mb-3">
+                                    <div className="flex items-center gap-2">
+                                      <label
+                                        className="block text-sm font-bold text-gray-300 truncate"
+                                        title={label}
                                       >
-                                        {currentGlobal > 0 ? "+" : ""}
-                                        {currentGlobal}%
-                                      </span>
+                                        {label}
+                                      </label>
                                     </div>
+                                    <span
+                                      className={`text-sm font-bold ${currentGlobal > 0 ? "text-green-400" : currentGlobal < 0 ? "text-red-400" : "text-gray-500"}`}
+                                    >
+                                      {currentGlobal > 0 ? "+" : ""}
+                                      {currentGlobal}%
+                                    </span>
+                                  </div>
 
                                   {/* Multi-row layout for better fit */}
                                   <div className="flex flex-col gap-2">
@@ -2522,8 +2536,8 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`,
                                             onClick={() => {
                                               const newAdjustments = { ...localAdjustments };
                                               const currentVal = parseFloat(
-                                                (newAdjustments[activeTab]?.[discountKey] === "" 
-                                                  ? 0 
+                                                (newAdjustments[activeTab]?.[discountKey] === ""
+                                                  ? 0
                                                   : newAdjustments[activeTab]?.[discountKey]) as string
                                               ) || 0;
                                               newAdjustments[activeTab] = {
@@ -2541,13 +2555,13 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`,
                                       </div>
 
                                       {/* Center Input */}
-                                        <input
-                                          type="number"
-                                          value={
-                                            localAdjustments[activeTab]?.[discountKey] === 0
-                                              ? 0
-                                              : (localAdjustments[activeTab]?.[discountKey] ?? "")
-                                          }
+                                      <input
+                                        type="number"
+                                        value={
+                                          localAdjustments[activeTab]?.[discountKey] === 0
+                                            ? 0
+                                            : (localAdjustments[activeTab]?.[discountKey] ?? "")
+                                        }
                                         onChange={(e) => {
                                           const val = e.target.value;
                                           const newAdjustments = { ...localAdjustments };
@@ -2569,8 +2583,8 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`,
                                             onClick={() => {
                                               const newAdjustments = { ...localAdjustments };
                                               const currentVal = parseFloat(
-                                                (newAdjustments[activeTab]?.[discountKey] === "" 
-                                                  ? 0 
+                                                (newAdjustments[activeTab]?.[discountKey] === ""
+                                                  ? 0
                                                   : newAdjustments[activeTab]?.[discountKey]) as string
                                               ) || 0;
                                               newAdjustments[activeTab] = {
@@ -2829,7 +2843,13 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`,
 
         {/* Mobile View */}
         <div className="md:hidden space-y-4">
-          {filteredProducts.length === 0 ? (
+          {isLoading ? (
+            <div className="space-y-4">
+              {[...Array(3)].map((_, i) => (
+                <div key={i} className="card-glass rounded-xl p-4 animate-pulse h-32" />
+              ))}
+            </div>
+          ) : filteredProducts.length === 0 ? (
             <div className="text-center py-12 text-gray-500">
               <svg
                 className="w-16 h-16 mx-auto mb-4 opacity-50"
@@ -2914,7 +2934,15 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`,
               </tr>
             </thead>
             <tbody>
-              {filteredProducts.length === 0 ? (
+              {isLoading ? (
+                [...Array(5)].map((_, i) => (
+                  <tr key={i} className="border-b border-white/5 animate-pulse">
+                    <td colSpan={8} className="py-4">
+                      <div className="h-8 bg-white/5 rounded w-full" />
+                    </td>
+                  </tr>
+                ))
+              ) : filteredProducts.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="py-8 text-center text-gray-500">
                     <svg
@@ -3055,66 +3083,66 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`,
 
                     const currency = base || "bs";
                     const currencySymbol = currency === "usd" ? "$" : "Bs";
-                    
+
                     // 2. Base Price
                     const listPrice =
                       typeof editForm.precioListaUsd === "number"
                         ? editForm.precioListaUsd
                         : parseFloat(editForm.precioListaUsd || "0");
-                        
-                    const basePriceDisplay = currency === "usd" 
-                        ? listPrice 
-                        : listPrice * exchangeRate;
+
+                    const basePriceDisplay = currency === "usd"
+                      ? listPrice
+                      : listPrice * exchangeRate;
 
                     // 3. Percentages
                     const discountPct = tempGlobalDiscounts[key] || 0;
                     const differentialPct = effectiveAdjustment;
-                    
+
                     // 4. Calculate Final Price
                     let calcPrice = basePriceDisplay;
                     // Apply Discount
                     if (discountPct !== 0) {
-                        calcPrice = calcPrice * (1 + discountPct / 100);
+                      calcPrice = calcPrice * (1 + discountPct / 100);
                     }
                     // Apply Differential (Multiplier logic)
                     if (differentialPct !== 0) {
-                        calcPrice = calcPrice * (differentialPct / 100);
+                      calcPrice = calcPrice * (differentialPct / 100);
                     }
                     // Apply Tax
                     if (applyTax) {
-                        calcPrice = calcPrice * (1 + taxRate / 100);
+                      calcPrice = calcPrice * (1 + taxRate / 100);
                     }
-                    
+
                     const finalPrice = Math.max(0, calcPrice);
 
                     return (
                       <div key={key} className="card-glass rounded-lg p-3 border border-white/5 bg-black/20">
                         <div className="flex justify-between items-center mb-2 pb-2 border-b border-white/5">
-                            <span className="text-xs text-gray-400 font-medium">{label}</span>
-                            <span className="text-base font-bold text-white">{currencySymbol}{finalPrice.toFixed(2)}</span>
+                          <span className="text-xs text-gray-400 font-medium">{label}</span>
+                          <span className="text-base font-bold text-white">{currencySymbol}{finalPrice.toFixed(2)}</span>
                         </div>
-                        
+
                         <div className="space-y-1.5">
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="text-gray-500">Descuento:</span>
+                            <span className={`font-medium ${discountPct < 0 ? "text-red-400" : discountPct > 0 ? "text-green-400" : "text-gray-600"}`}>
+                              {discountPct > 0 ? "+" : ""}{discountPct}%
+                            </span>
+                          </div>
+
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="text-gray-500">Diferencial:</span>
+                            <span className={`font-medium ${differentialPct > 0 ? "text-green-400" : differentialPct < 0 ? "text-red-400" : "text-gray-600"}`}>
+                              {differentialPct > 0 ? "+" : ""}{differentialPct}%
+                            </span>
+                          </div>
+
+                          {applyTax && (
                             <div className="flex justify-between items-center text-xs">
-                                <span className="text-gray-500">Descuento:</span>
-                                <span className={`font-medium ${discountPct < 0 ? "text-red-400" : discountPct > 0 ? "text-green-400" : "text-gray-600"}`}>
-                                    {discountPct > 0 ? "+" : ""}{discountPct}%
-                                </span>
+                              <span className="text-gray-500">IVA:</span>
+                              <span className="text-red-400 font-medium">{taxRate}%</span>
                             </div>
-                            
-                            <div className="flex justify-between items-center text-xs">
-                                <span className="text-gray-500">Diferencial:</span>
-                                <span className={`font-medium ${differentialPct > 0 ? "text-green-400" : differentialPct < 0 ? "text-red-400" : "text-gray-600"}`}>
-                                    {differentialPct > 0 ? "+" : ""}{differentialPct}%
-                                </span>
-                            </div>
-                            
-                            {applyTax && (
-                                <div className="flex justify-between items-center text-xs">
-                                    <span className="text-gray-500">IVA:</span>
-                                    <span className="text-red-400 font-medium">{taxRate}%</span>
-                                </div>
-                            )}
+                          )}
                         </div>
                       </div>
                     );
@@ -3385,45 +3413,45 @@ Esto modificará la base de datos y reiniciará el contador visual a 0.`,
       {/* Password Change Modal */}
       {showPasswordModal && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="card-glass rounded-2xl p-6 w-full max-w-md border border-white/20 shadow-2xl">
-                <h3 className="text-xl font-bold text-white mb-4">
-                    Cambiar Contraseña de {passwordModalType === 'admin' ? 'Administrador' : 'Trabajador'}
-                </h3>
-                
-                <div className="space-y-4">
-                    <div>
-                        <label className="block text-sm text-gray-400 mb-1">Nueva Contraseña</label>
-                        <input 
-                            type="text" 
-                            value={passwordForm.newPassword}
-                            onChange={(e) => setPasswordForm({...passwordForm, newPassword: e.target.value})}
-                            className="input-dark w-full rounded-lg px-4 py-3 text-white"
-                            placeholder="Introduce la nueva contraseña"
-                        />
-                    </div>
-                    
-                    <div className="flex gap-3 pt-2">
-                        <button
-                            onClick={() => setShowPasswordModal(false)}
-                            className="flex-1 px-4 py-2 rounded-lg font-medium bg-gray-700 hover:bg-gray-600 transition-all text-white"
-                        >
-                            Cancelar
-                        </button>
-                        <button
-                            onClick={() => {
-                                if (passwordForm.newPassword.length < 4) {
-                                    showAlert("La contraseña debe tener al menos 4 caracteres", "Error");
-                                    return;
-                                }
-                                changePassword(passwordForm.newPassword);
-                            }}
-                            className="flex-1 btn-primary px-4 py-2 rounded-lg font-medium text-gray-900 transition-all"
-                        >
-                            Guardar
-                        </button>
-                    </div>
-                </div>
+          <div className="card-glass rounded-2xl p-6 w-full max-w-md border border-white/20 shadow-2xl">
+            <h3 className="text-xl font-bold text-white mb-4">
+              Cambiar Contraseña de {passwordModalType === 'admin' ? 'Administrador' : 'Trabajador'}
+            </h3>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm text-gray-400 mb-1">Nueva Contraseña</label>
+                <input
+                  type="text"
+                  value={passwordForm.newPassword}
+                  onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+                  className="input-dark w-full rounded-lg px-4 py-3 text-white"
+                  placeholder="Introduce la nueva contraseña"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  onClick={() => setShowPasswordModal(false)}
+                  className="flex-1 px-4 py-2 rounded-lg font-medium bg-gray-700 hover:bg-gray-600 transition-all text-white"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={() => {
+                    if (passwordForm.newPassword.length < 4) {
+                      showAlert("La contraseña debe tener al menos 4 caracteres", "Error");
+                      return;
+                    }
+                    changePassword(passwordForm.newPassword);
+                  }}
+                  className="flex-1 btn-primary px-4 py-2 rounded-lg font-medium text-gray-900 transition-all"
+                >
+                  Guardar
+                </button>
+              </div>
             </div>
+          </div>
         </div>
       )}
 

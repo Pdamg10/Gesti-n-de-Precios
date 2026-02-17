@@ -1,7 +1,7 @@
 'use client'
 
 import { memo } from 'react'
-import { roundToNearest5 } from '@/lib/utils'
+import { roundToNearest5, formatCurrency } from '@/lib/utils'
 
 interface Product {
   id: string
@@ -51,22 +51,22 @@ const ProductRow = memo(function ProductRow({
   const getEffectiveAdjustment = (type: string) => {
     const individualKey = `adjustment${type.charAt(0).toUpperCase() + type.slice(1)}`
     const individualAdjustment = (product as any)[individualKey]
-    
+
     // Treat 0 as "Inherit" to allow Global unification to work on existing products
     // (User requested that Baterías list matches Cauchos list automatically)
     if (individualAdjustment !== undefined && individualAdjustment !== null && individualAdjustment !== '' && individualAdjustment !== 0) {
       return parseFloat(individualAdjustment)
     }
-    
+
     return currentGlobals?.[type] || currentDefaults?.[type] || 0
   }
 
   const getDisplayedBasePrice = (currency: 'bs' | 'usd') => {
     // Always derive base price relative to USD if currency is BS
-    const base = currency === 'bs' 
-      ? (product.precioListaUsd * exchangeRate) 
+    const base = currency === 'bs'
+      ? (product.precioListaUsd * exchangeRate)
       : product.precioListaUsd
-      
+
     // Discount logic moved to render for strict separation
     return Math.max(0, Math.round(base * 100) / 100)
   }
@@ -81,54 +81,54 @@ const ProductRow = memo(function ProductRow({
         const adjustment = getEffectiveAdjustment(type)
         const nativeCurrency = base || 'usd' // The actual currency of this column
         const isNativeUsd = nativeCurrency === 'usd'
-        
+
         // 1. Get raw base price in display currency ($)
         const displayBasePrice = getDisplayedBasePrice('usd')
-        
+
         // 2. Get discount and adjustments
         // Descuento = Global Discount (tempGlobalDiscounts)
         const globalDiscount = tempGlobalDiscounts[type] || 0
         // Aumento = Column Adjustment (getEffectiveAdjustment)
         const increaseAdjustment = getEffectiveAdjustment(type)
-        
+
         // 3. Calculate final price
         const shouldApplyTax = applyTax !== undefined ? applyTax : (nativeCurrency === 'bs')
-        
+
         // Native base for calculation (USD or Bs based on configuration)
-        const calculationBase = nativeCurrency === 'bs' 
-          ? (product.precioListaUsd * exchangeRate) 
+        const calculationBase = nativeCurrency === 'bs'
+          ? (product.precioListaUsd * exchangeRate)
           : product.precioListaUsd
 
         // Apply global discount first
         console.log(`[ProductRow] ${type}: Base=${calculationBase}, Discount=${globalDiscount}, Adjust=${increaseAdjustment}`);
         let priceAfterDiscount = calculationBase
         if (globalDiscount !== 0) {
-           priceAfterDiscount = calculationBase * (1 + globalDiscount / 100)
+          priceAfterDiscount = calculationBase * (1 + globalDiscount / 100)
         }
-        
+
         // Then apply column adjustment (Aumento)
         // Note: Logic suggests "Aumento" is the per-column adjustment.
         // We use calculatePrice to defer to the centralized logic if needed, but here we want to be explicit.
         // calculatePrice usually does base * (1+adj/100).
         // Let's chain them: Base -> Discount -> Increase.
-        
+
         let finalPrice = priceAfterDiscount
         if (increaseAdjustment !== 0) {
-           finalPrice = finalPrice * (increaseAdjustment / 100)
+          finalPrice = finalPrice * (increaseAdjustment / 100)
         }
 
         if (shouldApplyTax) {
           finalPrice = finalPrice * (1 + taxRate / 100)
         }
-        
+
         // Apply Tax if needed (logic matches calculatePrice internal structure usually)
         // If calculatePrice encapsulates all of this, we might need to update it? 
         // But for now, let's keep it explicit in the row for display.
-        
+
         // Actually, let's rely on standard logic for the FINAL number to remain "correct" in system terms,
         // but we just show the breakdown.
         // BUT, getDisplayedBasePrice used to include discount. We need to strip that from the helper function below.
-        
+
         // Re-calcuating final manually to ensure "Descuento" + "Aumento" logic lines up.
         // If globalDiscount is stored as negative (e.g. -5%), it works.
         // If increaseAdjustment is stored as positive (e.g. 5%), it works.
@@ -138,34 +138,69 @@ const ProductRow = memo(function ProductRow({
         const isIndividual = Math.abs(increaseAdjustment - defaultAdj) > 0.01
 
         const currencySymbol = nativeCurrency === 'bs' ? 'Bs' : '$'
-        const baseSymbol = '$' 
+        const baseSymbol = '$'
 
         return (
           <td key={type} className="py-3 px-2 text-right">
             <div className="text-sm text-white/70 mb-1 font-medium">
-              Base: {baseSymbol}{(displayBasePrice * (increaseAdjustment !== 0 ? increaseAdjustment / 100 : 1)).toFixed(2)}
+              Base: {baseSymbol}{formatCurrency(displayBasePrice * (increaseAdjustment !== 0 ? increaseAdjustment / 100 : 1))}
             </div>
-            
+
             {/* Descuento - Always Visible */}
             <div className={`text-sm mb-1 font-bold ${globalDiscount < 0 ? 'text-red-400' : globalDiscount > 0 ? 'text-green-400' : 'text-white/60'}`}>
               Descuento {globalDiscount > 0 ? '+' : ''}{globalDiscount}%
             </div>
 
-            {/* Aumento - Admin Only */}
-            {isAdmin && (
-              <div className={`text-sm mb-1 font-bold ${increaseAdjustment < 0 ? 'text-red-400' : increaseAdjustment > 0 ? 'text-green-400' : 'text-white/60'}`}>
-                Diferencial {increaseAdjustment > 0 ? '+' : ''}{increaseAdjustment}%
-                {isIndividual && <span className="text-red-500 ml-1" title="Ajuste individual">●</span>}
+            {/* Aumento / Descuento Logic - Admin Only */}
+            {isAdmin && isIndividual && (
+              <div className="text-xs text-amber-500 font-bold mb-1">
+                (Ajuste Manual)
               </div>
             )}
 
+            {isAdmin && (
+              <>
+                {increaseAdjustment < 100 ? (
+                  <div className="text-sm mb-1 font-bold text-green-400">
+                    Descuento {Math.round(100 - increaseAdjustment)}%
+                    <span className="text-xs opacity-70 font-normal ml-1">
+                      (Cobra {increaseAdjustment}%)
+                    </span>
+                  </div>
+                ) : increaseAdjustment > 100 ? (
+                  <div className="text-sm mb-1 font-bold text-blue-400">
+                    Aumento +{Math.round(increaseAdjustment - 100)}%
+                    <span className="text-xs opacity-70 font-normal ml-1">
+                      (x{increaseAdjustment / 100})
+                    </span>
+                  </div>
+                ) : (
+                  <div className="text-sm mb-1 font-bold text-white/40">
+                    Precio de Lista
+                  </div>
+                )}
+              </>
+            )}
+
             <div className="font-mono text-lg font-black text-white drop-shadow-sm mt-1">
-              {shouldApplyTax ? 'Total + IVA:' : 'Total:'} {currencySymbol}{nativeFinalPrice.toFixed(2)}
+              {shouldApplyTax ? 'Total + IVA:' : 'Total:'}
+              <span className="text-yellow-400 ml-1">{currencySymbol}{formatCurrency(nativeFinalPrice)}</span>
+            </div>
+
+            {/* Dual Currency Display */}
+            <div className="text-xs text-white/50 font-medium mt-1">
+              {nativeCurrency === 'bs' ? (
+                // If Base is Bs, show USD
+                `Ref: $${formatCurrency(nativeFinalPrice / exchangeRate)}`
+              ) : (
+                // If Base is USD, show Bs
+                `Ref: Bs${formatCurrency(nativeFinalPrice * exchangeRate)}`
+              )}
             </div>
           </td>
         )
       })}
-      <td className="py-3 px-2 text-right font-mono text-sm text-white font-semibold">${getDisplayedBasePrice('usd').toFixed(2)}</td>
+      <td className="py-3 px-2 text-right font-mono text-sm text-white font-semibold">${formatCurrency(getDisplayedBasePrice('usd'))}</td>
       {isAdmin && (
         <td className="py-3 pl-2 text-center">
           <div className="flex justify-center gap-1">

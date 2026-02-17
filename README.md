@@ -1,26 +1,34 @@
 <<<<<<< HEAD
-# Sistema de Gestión de Precios de Cauchos y Baterías
+# Sistema de Gestión de Precios - Cauchos y Baterias
 
-Aplicación web Next.js para gestión dinámica de precios con ajustes globales y base de datos en la nube.
+Aplicación web Next.js para gestión dinámica de precios de Cauchos y Baterías, con actualizaciones automáticas de tasa BCV y cálculos de precios especializados.
 
-## 🚀 Características
+## 🚀 Características Principales
 
-- ✅ **Gestión de productos** (Cauchos y Baterías)
-- ✅ **Ajustes de precios base** (-5%, -1%, 0, +1%, +5%, +)
-- ✅ **Ajustes globales** por tipo de precio (Cashea, Transferencia, Divisas, Personalizado)
-- ✅ **Importación/Exportación Excel**
-- ✅ **Base de datos en la nube** (Supabase)
-- ✅ **Actualizaciones en tiempo real**
-- ✅ **Responsive design**
-- ✅ **Panel de administrador seguro**
+### 💰 Gestión de Precios Inteligente
+- **Cálculo Automático**: Precios en Bs y USD actualizados en tiempo real.
+- **Reglas de Negocio Personalizadas**:
+  - **Cashea**: Cálculo automático del 45% del precio (Cliente paga inicial del 55%).
+  - **Transferencia**: Descuento del 55% sobre el precio base.
+  - **Pago Móvil (Bs)**: Aumento del 300% sobre la base en Bs.
+  - **Divisas**: Precio base en dólares sin ajustes.
+
+### 🔄 Automatización y Datos
+- **Tasa BCV Automática**: Se actualiza automáticamente desde el Banco Central de Venezuela cada 12 horas.
+- **Indicador en Tiempo Real**: Visualización de la tasa actual en el encabezado.
+- **Base de Datos en la Nube**: Integración con Supabase para persistencia de datos.
+
+### ⚡ Rendimiento Optimizado
+- **Carga Diferida (Lazy Loading)**: Módulos pesados como exportación PDF/Excel se cargan solo cuando se necesitan.
+- **Mejoras UX**: Esqueletos de carga (Skeletons) para una experiencia fluida.
+- **Código Optimizado**: Eliminación de dependencias no utilizadas y code-splitting.
 
 ## 🛠️ Stack Tecnológico
 
-- **Frontend**: Next.js 16, TypeScript, Tailwind CSS
-- **Backend**: Next.js API Routes
-- **Database**: Supabase (PostgreSQL)
-- **UI Components**: shadcn/ui
-- **File Processing**: XLSX
+- **Frontend**: Next.js 14, TypeScript, Tailwind CSS
+- **Backend**: Next.js API Routes, Supabase
+- **UI Components**: shadcn/ui, Lucide Icons
+- **Herramientas**: `jspdf`, `xlsx` (Carga dinámica)
 
 ## 📋 Configuración Inicial
 
@@ -32,116 +40,30 @@ cd <project-folder>
 
 ### 2. Instalar dependencias
 ```bash
+npm install
+# o
 bun install
 ```
 
-### 3. Configurar Supabase
-1. Crea una cuenta en [https://supabase.com](https://supabase.com)
-2. Crea un nuevo proyecto
-3. Copia las credenciales (Project URL y anon key)
-4. Ejecuta el schema SQL (`supabase-schema.sql`) en el SQL Editor de Supabase
-
-### 4. Configurar variables de entorno
-Crea un archivo `.env` con:
+### 3. Configurar Variables de Entorno
+Crea un archivo `.env.local` con tus credenciales de Supabase:
 ```env
-NEXT_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key_here
+NEXT_PUBLIC_SUPABASE_URL=tu_url_supabase
+NEXT_PUBLIC_SUPABASE_ANON_KEY=tu_anon_key_supabase
+SUPABASE_SERVICE_ROLE_KEY=tu_service_role_key (Solo para scripts administrativos)
 ```
 
-### 5. Iniciar desarrollo
+### 4. Iniciar desarrollo
 ```bash
-bun run dev
+npm run dev
 ```
 
 Visita `http://localhost:3000` para ver la aplicación.
 
-## 🌐 Despliegue en Producción
-
-### Opción 1: Vercel (Recomendado)
-1. Crea cuenta en [https://vercel.com](https://vercel.com)
-2. Conecta tu repositorio de GitHub
-3. Configura las variables de entorno en Vercel
-4. Despliega automáticamente
-
-### Opción 2: Netlify
-1. Crea cuenta en [https://netlify.com](https://netlify.com)
-2. Conecta tu repositorio de GitHub
-3. Configura las variables de entorno
-4. Despliega
-
-## 📊 Funcionalidades Principales
-
-### Ajustes de Precios Base
-- **📊 Ajustar Lista (Bs)**: Botones rápidos -5%, -1%, 0, +1%, +5%, +
-- **💵 Ajustar Lista ($)**: Botones rápidos -5%, -1%, 0, +1%, +5%, +
-- Redondeo automático a múltiplos de 5
-- Guardado automático en la nube
-
-### Ajustes Globales
-- **Cashea (Bs)**: Ajuste global para precios en Bolívares
-- **Transferencia (Bs)**: Ajuste para transferencias
-- **Divisas ($)**: Ajuste para precios en dólares
-- **Otro Precio**: Ajuste personalizado
-
-### Gestión de Productos
-- Agregar/editar/eliminar productos
-- Importación masiva desde Excel
-- Exportación a Excel
-- Ajustes individuales por producto
-
-## 🔐 Seguridad
-
-- Panel de administrador con contraseña
-- Contraseña por defecto: `admin123`
-- Las credenciales de Supabase son públicas (solo para lectura/escritura de datos)
-
-## 📁 Estructura del Proyecto
-
-```
-src/
-├── app/
-│   ├── api/          # API Routes
-│   │   ├── products/
-│   │   └── settings/
-│   ├── components/   # Componentes React
-│   └── page.tsx      # Página principal
-├── lib/
-│   ├── supabase.ts   # Cliente de Supabase
-│   └── db.ts         # Antiguo cliente Prisma (deprecado)
-└── components/
-    └── ui/           # Componentes shadcn/ui
-```
-
-## 🔄 Migración desde SQLite
-
-Si vienes de la versión local con SQLite:
-
-1. Configura Supabase (ver arriba)
-2. Ejecuta el schema SQL en Supabase
-3. Los datos locales no se migran automáticamente
-4. Deberás重新ingresar los productos
-
-## 🤝 Contribuir
-
-1. Fork el proyecto
-2. Crea una rama (`git checkout -b feature/AmazingFeature`)
-3. Commit tus cambios (`git commit -m 'Add some AmazingFeature'`)
-4. Push a la rama (`git push origin feature/AmazingFeature`)
-5. Abre un Pull Request
-
-## 📄 Licencia
-
-Este proyecto está bajo la Licencia MIT.
-
-## 🆘 Soporte
-
-Si tienes problemas:
-
-1. Revisa el archivo `SUPABASE_SETUP.md`
-2. Verifica que las variables de entorno estén correctas
-3. Asegúrate de haber ejecutado el schema SQL en Supabase
-4. Revisa la consola del navegador para errores
+## 🔒 Roles y Seguridad
+- **Super Admin**: Acceso total a configuración, usuarios y precios.
+- **Administrador**: Gestión de precios e inventario.
+- **Trabajador**: Vista de lista de precios y calculadora.
 
 ---
-
-**Hecho con ❤️ usando Next.js y Supabase**
+**Desarrollado para Grupo Chirica**

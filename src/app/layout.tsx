@@ -36,6 +36,7 @@ export const metadata: Metadata = {
 };
 
 import { ModalProvider } from "@/context/ModalContext";
+import RateUpdater from "@/components/RateUpdater";
 
 export default function RootLayout({
   children,
@@ -48,11 +49,12 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground overflow-x-hidden`}
       >
         <div className="fixed inset-0 bg-black -z-50">
-           <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-gray-900 via-black to-black opacity-80"></div>
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-gray-900 via-black to-black opacity-80"></div>
         </div>
         <ModalProvider>
           {children}
           <Toaster />
+          <RateUpdater />
         </ModalProvider>
       </body>
     </html>
